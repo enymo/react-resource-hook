@@ -42,7 +42,8 @@ interface OptionsImplementation<T, U> extends OptionsCommon<T, U> {
 }
 
 interface ReturnCommon {
-    loading: boolean
+    loading: boolean,
+    refresh: () => Promise<void>
 }
 
 interface ReturnList<T> extends ReturnCommon {
@@ -112,7 +113,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     const store = useCallback(async (item: Partial<T> = {}) => {
         let response = await axios.post<U>(routeFunction(`${resource}.store`, params), await inverseTransformer(item));
         if (!eventOverride) {
-            handleCreated(filter(await transformer(response.data)));
+            handleCreated(await transformer(response.data));
         }
     }, [axios, eventOverride, resource, params, routeFunction, transformer, inverseTransformer]);
 
@@ -160,19 +161,22 @@ export default function useResource<T extends Resource, U extends Resource = T>(
 
     const destroySingle = useCallback((updateMethodOverride?: UpdateMethod) => destroyList(id, updateMethodOverride), [destroyList, id]);
 
-    useEffect(() => {
+    const refresh = useCallback(async () => {
         if (resource && id !== null) {
             setLoading(true);
-            axios.get(id ? routeFunction(`${resource}.show`, {
+            const response = await axios.get(id ? routeFunction(`${resource}.show`, {
                 [paramName]: id,
                 ...params
-            }) : routeFunction(`${resource}.index`, params)).then(async response => {
-                setEventOverride(response.headers["x-socket-event"] ?? null);
-                setState(id ? await transformer(response.data) as T : await Promise.all(response.data.map(transformer)) as T[]);
-                setLoading(false);
-            });
+            }) : routeFunction(`${resource}.index`, params));
+            setEventOverride(response.headers["x-socket-event"] ?? null);
+            setState(await (id ? transformer(response.data) : Promise.all(response.data.map(transformer))));
+            setLoading(false);
         }
     }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer]);
 
-    return [state, id ? {loading, update: updateSingle, destroy: destroySingle} : {loading, store, update: updateList, destroy: destroyList}]
+    useEffect(() => {
+        refresh();
+    }, [refresh]);
+
+    return [state, id ? {loading, refresh, update: updateSingle, destroy: destroySingle} : {loading, store, update: updateList, destroy: destroyList, refresh}]
 }
