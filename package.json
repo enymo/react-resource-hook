@@ -1,0 +1,45 @@
+{
+  "name": "@enymo/react-resource-hook",
+  "version": "0.0.0",
+  "description": "Full featured hook for interacting with rest apis",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "tsup": {
+    "entry": [
+      "src/js/index.ts"
+    ],
+    "format": [
+      "esm",
+      "cjs"
+    ],
+    "dts": true
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.internal.enymo.com/enymo/library/react-resource-hook.git"
+  },
+  "author": "enymo GmbH",
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "@enymo:registry": "https://gitlab.internal.enymo.com/api/v4/projects/84/packages/npm/"
+  },
+  "devDependencies": {
+    "@types/pluralize": "^0.0.29",
+    "@types/react": "^18.0.25",
+    "postcss": "^8.4.17",
+    "tsup": "^6.2.2",
+    "typescript": "^4.7.4"
+  },
+  "peerDependencies": {
+    "@enymo/react-socket-hook": "^1.0.0",
+    "axios": "^1.1.3",
+    "react": ">=17.0.0"
+  },
+  "dependencies": {
+    "pluralize": "^8.0.0"
+  }
+}
