@@ -2,7 +2,7 @@ import { AxiosInstance } from "axios";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import pluralize from "pluralize";
 import useSocket from "@enymo/react-socket-hook";
-import { filter } from "./util";
+import { filter, identity } from "./util";
 
 type Handler<T, U> = (item: T, prev: U) => U;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
@@ -72,16 +72,12 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     params,
     socketEvent: eventOverrideProp,
     defaultUpdateMethod = "on-success",
-    transformer: transformerProp,
-    inverseTransformer: inverseTransformerProp,
+    transformer = identity,
+    inverseTransformer = identity,
     onCreated,
     onUpdated,
     onDestroyed
 }: OptionsImplementation<T, U> = {}): [T[] | T, ReturnList<T> | ReturnSingle<T>] {
-    const defaultTransformer = useCallback((item: U | Partial<U> | T | Partial<T>) => item as any, []);
-    const transformer = transformerProp ?? defaultTransformer;
-    const inverseTransformer = inverseTransformerProp ?? defaultTransformer;
-
     const {axios, routeFunction} = useContext(Context);
     const [state, setState] = useState<T[] | T>(id === undefined ? [] : null);
     const [loading, setLoading] = useState(true);
