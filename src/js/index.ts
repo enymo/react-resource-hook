@@ -72,12 +72,16 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     params,
     socketEvent: eventOverrideProp,
     defaultUpdateMethod = "on-success",
-    transformer = item => item as any,
-    inverseTransformer = item => item as any,
+    transformer: transformerProp,
+    inverseTransformer: inverseTransformerProp,
     onCreated,
     onUpdated,
     onDestroyed
 }: OptionsImplementation<T, U> = {}): [T[] | T, ReturnList<T> | ReturnSingle<T>] {
+    const defaultTransformer = useCallback((item: U | Partial<U> | T | Partial<T>) => item as any, []);
+    const transformer = transformerProp ?? defaultTransformer;
+    const inverseTransformer = inverseTransformerProp ?? defaultTransformer;
+
     const {axios, routeFunction} = useContext(Context);
     const [state, setState] = useState<T[] | T>(id === undefined ? [] : null);
     const [loading, setLoading] = useState(true);
