@@ -2,7 +2,7 @@ import { AxiosInstance } from "axios";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import pluralize from "pluralize";
 import useSocket from "@enymo/react-socket-hook";
-import { filter, identity } from "./util";
+import { filter, identity, objectToFormData } from "./util";
 
 type Handler<T, U> = (item: T, prev: U) => U;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
@@ -16,6 +16,7 @@ interface OptionsCommon<T, U> {
     params?: {[param: string]: string|number},
     socketEvent?: string,
     defaultUpdateMethod?: UpdateMethod,
+    useFormData?: boolean,
     transformer?(item: U): T | Promise<T>,
     transformer?(item: Partial<U>) : Partial<T> | Promise<Partial<T>>,
     inverseTransformer?(item: T): U | Promise<U>,
@@ -72,6 +73,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     params,
     socketEvent: eventOverrideProp,
     defaultUpdateMethod = "on-success",
+    useFormData = false,
     transformer = identity,
     inverseTransformer = identity,
     onCreated,
@@ -111,7 +113,12 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     useSocket<number|string>(`${event}.destroyed`, handleDestroyed, [handleDestroyed]);
 
     const store = useCallback(async (item: Partial<T> = {}) => {
-        let response = await axios.post<U>(routeFunction(`${resource}.store`, params), await inverseTransformer(item));
+        const body = await inverseTransformer(item);
+        let response = await axios.post<U>(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body) : body, useFormData ? {
+            headers: {
+                "content-type": "multipart/form-data"
+            }
+        } : {});
         if (!eventOverride) {
             handleCreated(await transformer(response.data));
         }
@@ -123,8 +130,14 @@ export default function useResource<T extends Resource, U extends Resource = T>(
             [paramName]: id,
             ...params
         });
+        const body = filter(await inverseTransformer(update));
+        const config = useFormData ? {
+            headers: {
+                "content-type": "multipart/form-data"
+            }
+        } : {};
         if (updateMethod === "on-success") {
-            let response = await axios.put<U>(route, filter(await inverseTransformer(update)));
+            let response = await axios.put<U>(route, useFormData ? objectToFormData(body) : body, config);
             const transformed = filter(await transformer(response.data));
             if (!eventOverride) {
                 handleUpdated(transformed);
@@ -136,7 +149,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
                 ...update
             });
             if (updateMethod === "immediate") {
-                await axios.put(route, filter(await inverseTransformer(update)));
+                await axios.put(route, useFormData ? objectToFormData(body) : body, config);
             }
         }
     }, [axios, paramName, eventOverride, resource, params, routeFunction, inverseTransformer, transformer]);
