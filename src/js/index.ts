@@ -88,7 +88,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     const [eventOverride, setEventOverride] = useState(null);
     
     const event = eventOverrideProp ?? eventOverride ?? resource;
-    const paramName = useMemo(() => paramNameOverride ?? pluralize.singular(resource.split(".").pop()), [paramNameOverride, resource]);
+    const paramName = useMemo(() => paramNameOverride ?? (resource && pluralize.singular(resource.split(".").pop())), [paramNameOverride, resource]);
 
     const isArray = useCallback((input: T | T[]): input is T[] => {
         return !id;
