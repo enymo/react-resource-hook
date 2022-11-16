@@ -17,6 +17,7 @@ interface OptionsCommon<T, U> {
     socketEvent?: string,
     defaultUpdateMethod?: UpdateMethod,
     useFormData?: boolean,
+    autoRefresh?: boolean,
     transformer?(item: U): T | Promise<T>,
     transformer?(item: Partial<U>) : Partial<T> | Promise<Partial<T>>,
     inverseTransformer?(item: T): U | Promise<U>,
@@ -74,6 +75,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     socketEvent: eventOverrideProp,
     defaultUpdateMethod = "on-success",
     useFormData = false,
+    autoRefresh = true,
     transformer = identity,
     inverseTransformer = identity,
     onCreated,
@@ -188,8 +190,10 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer]);
 
     useEffect(() => {
-        refresh();
-    }, [refresh]);
+        if (autoRefresh) {
+            refresh();
+        }
+    }, [refresh, autoRefresh]);
 
     return [state, id ? {loading, refresh, update: updateSingle, destroy: destroySingle} : {loading, store, update: updateList, destroy: destroyList, refresh}]
 }
