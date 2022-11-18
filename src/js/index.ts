@@ -91,7 +91,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     const paramName = useMemo(() => paramNameOverride ?? (resource && pluralize.singular(resource.split(".").pop())), [paramNameOverride, resource]);
 
     const isArray = useCallback((input: T | T[]): input is T[] => {
-        return !id;
+        return id === undefined;
     }, [id]);
 
     const handle = useCallback(<V = T>(handler: Handler<V, T | T[]>, defaultHandler: Handler<V, T | T[]>) => (item: V) => {
@@ -99,7 +99,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     }, [transformer, setState]);
 
     const handleCreated = useMemo(() => handle(onCreated, (item, prev) => (prev as T[]).find(s => s.id === item.id) ? prev : [...prev as T[], item]), [handle, onCreated]);
-    const handleUpdated = useMemo(() => handle<Partial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id === item.id ? Object.assign(s, item) : s)) : Object.assign(prev, item)), [handle, onUpdated]);
+    const handleUpdated = useMemo(() => handle<Partial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id === item.id ? Object.assign(s, item) : s)) : {...prev, ...item}), [handle, onUpdated]);
     const handleDestroyed = useCallback((delId: number|string) => {
         if (id) {
             onDestroyed?.(delId);
@@ -111,7 +111,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     }, [onDestroyed, setState, id]);
 
     useSocket<U>(!id && `${event}.created`, async item => !loading && handleCreated(filter(await transformer(item))), [loading, handleCreated]);
-    useSocket<Partial<U>>(`${event}.updated`, async item => !loading && handleUpdated(filter(await transformer(item))), [loading, handleUpdated]);
+    useSocket<Partial<U>>(`${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [loading, handleUpdated]);
     useSocket<number|string>(`${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
     const store = useCallback(async (item: Partial<T> = {}) => {
