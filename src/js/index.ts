@@ -110,9 +110,9 @@ export default function useResource<T extends Resource, U extends Resource = T>(
         }
     }, [onDestroyed, setState, id]);
 
-    useSocket<U>(!id && `${event}.created`, async item => !loading && handleCreated(filter(await transformer(item))), [handleCreated]);
-    useSocket<Partial<U>>(`${event}.updated`, async item => !loading && handleUpdated(filter(await transformer(item))), [handleUpdated]);
-    useSocket<number|string>(`${event}.destroyed`, id => !loading && handleDestroyed(id), [handleDestroyed]);
+    useSocket<U>(!id && `${event}.created`, async item => !loading && handleCreated(filter(await transformer(item))), [loading, handleCreated]);
+    useSocket<Partial<U>>(`${event}.updated`, async item => !loading && handleUpdated(filter(await transformer(item))), [loading, handleUpdated]);
+    useSocket<number|string>(`${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
     const store = useCallback(async (item: Partial<T> = {}) => {
         const body = await inverseTransformer(item);
