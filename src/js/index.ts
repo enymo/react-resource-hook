@@ -50,7 +50,7 @@ interface ReturnCommon {
 
 interface ReturnList<T> extends ReturnCommon {
     update: (id: string | number, update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>,
-    store: (item?: Partial<T>) => Promise<void>,
+    store: (item?: Partial<T>) => Promise<string | number>,
     destroy: (id: string | number, updateMethod?: UpdateMethod) => Promise<void>
 }
 
@@ -124,6 +124,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
         if (!eventOverride) {
             handleCreated(await transformer(response.data));
         }
+        return response.data.id;
     }, [axios, eventOverride, resource, params, routeFunction, transformer, inverseTransformer]);
 
     const updateList = useCallback(async (id: string|number, update: Partial<T>, updateMethodOverride?: UpdateMethod) => {
