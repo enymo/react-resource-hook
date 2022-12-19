@@ -85,7 +85,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
 }: OptionsImplementation<T, U> = {}): [T[] | T, ReturnList<T> | ReturnSingle<T>] {
     const {axios, routeFunction} = useContext(Context);
     const [state, setState] = useState<T[] | T>(id === undefined ? [] : null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(autoRefresh);
     const [eventOverride, setEventOverride] = useState(null);
     
     const event = eventOverrideProp ?? eventOverride ?? resource;
