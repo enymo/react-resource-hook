@@ -187,8 +187,8 @@ export default function useResource<T extends Resource, U extends Resource = T>(
             }) : routeFunction(`${resource}.index`, params));
             setEventOverride(response.headers["x-socket-event"] ?? null);
             setState(await (id ? transformer(response.data) : Promise.all(response.data.map(transformer))));
-            setLoading(false);
         }
+        setLoading(false);
     }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer]);
 
     useEffect(() => {
