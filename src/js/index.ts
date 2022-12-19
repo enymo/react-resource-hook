@@ -43,27 +43,20 @@ interface OptionsImplementation<T, U> extends OptionsCommon<T, U> {
     onDestroyed?: (id: number|string, prev?: T[]) => void | T[]
 }
 
-export type Refresh = () => Promise<void>;
-export type UpdateList<T extends Resource> = (id: T["id"], update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>;
-export type UpdateSingle<T extends Resource> = (update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>;
-export type Store<T extends Resource> = (item?: Partial<T>) => Promise<T["id"]>;
-export type DestroyList<T extends Resource> = (id: T["id"], updateMethod?: UpdateMethod) => Promise<void>;
-export type DestroySingle = (updateMethod?: UpdateMethod) => Promise<void>;
-
 interface ReturnCommon {
     loading: boolean,
     refresh: () => Promise<void>
 }
 
-interface ReturnList<T extends Resource> extends ReturnCommon {
-    update: UpdateList<T>,
-    store: Store<T>,
-    destroy: DestroyList<T>
+interface ReturnList<T> extends ReturnCommon {
+    update: (id: string | number, update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>,
+    store: (item?: Partial<T>) => Promise<string | number>,
+    destroy: (id: string | number, updateMethod?: UpdateMethod) => Promise<void>
 }
 
-interface ReturnSingle<T extends Resource> extends ReturnCommon {
-    update: UpdateSingle<T>
-    destroy: DestroySingle
+interface ReturnSingle<T> extends ReturnCommon {
+    update: (update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>,
+    destroy: (updateMethod?: UpdateMethod) => Promise<void>
 }
 
 const Context = createContext<{
