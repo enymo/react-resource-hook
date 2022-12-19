@@ -43,18 +43,19 @@ interface OptionsImplementation<T, U> extends OptionsCommon<T, U> {
     onDestroyed?: (id: number|string, prev?: T[]) => void | T[]
 }
 
-interface ReturnCommon {
+interface ReturnCommon<T extends Resource> {
     loading: boolean,
+    store: (item?: Partial<T>) => Promise<T["id"]>,
     refresh: () => Promise<void>
 }
 
-interface ReturnList<T> extends ReturnCommon {
+interface ReturnList<T extends Resource> extends ReturnCommon<T> {
     update: (id: string | number, update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>,
-    store: (item?: Partial<T>) => Promise<string | number>,
+    
     destroy: (id: string | number, updateMethod?: UpdateMethod) => Promise<void>
 }
 
-interface ReturnSingle<T> extends ReturnCommon {
+interface ReturnSingle<T extends Resource> extends ReturnCommon<T> {
     update: (update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>,
     destroy: (updateMethod?: UpdateMethod) => Promise<void>
 }
@@ -121,11 +122,11 @@ export default function useResource<T extends Resource, U extends Resource = T>(
                 "content-type": "multipart/form-data"
             }
         } : {});
-        if (!eventOverride) {
+        if (!id && !event) {
             handleCreated(await transformer(response.data));
         }
         return response.data.id;
-    }, [axios, eventOverride, resource, params, routeFunction, transformer, inverseTransformer]);
+    }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
 
     const updateList = useCallback(async (id: string|number, update: Partial<T>, updateMethodOverride?: UpdateMethod) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
@@ -142,7 +143,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
         if (updateMethod === "on-success") {
             let response = await axios.put<U>(route, useFormData ? objectToFormData(body) : body, config);
             const transformed = filter(await transformer(response.data));
-            if (!eventOverride) {
+            if (!event) {
                 handleUpdated(transformed);
             }
         }
@@ -155,7 +156,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
                 await axios.put(route, useFormData ? objectToFormData(body) : body, config);
             }
         }
-    }, [axios, paramName, eventOverride, resource, params, routeFunction, inverseTransformer, transformer]);
+    }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer]);
 
     const updateSingle = useCallback((update: Partial<T>, updateMethodOverride?: UpdateMethod) => {
         return updateList(id, update, updateMethodOverride);
@@ -170,10 +171,10 @@ export default function useResource<T extends Resource, U extends Resource = T>(
         if (updateMethod !== "immediate") {
             await promise;
         }
-        if (!eventOverride || updateMethod !== "on-success") {
+        if (!event || updateMethod !== "on-success") {
             handleDestroyed(id);
         }
-    }, [axios, eventOverride, resource, params, routeFunction]);
+    }, [axios, event, resource, params, routeFunction]);
 
     const destroySingle = useCallback((updateMethodOverride?: UpdateMethod) => destroyList(id, updateMethodOverride), [destroyList, id]);
 
@@ -196,5 +197,5 @@ export default function useResource<T extends Resource, U extends Resource = T>(
         }
     }, [refresh, autoRefresh]);
 
-    return [state, id ? {loading, refresh, update: updateSingle, destroy: destroySingle} : {loading, store, update: updateList, destroy: destroyList, refresh}]
+    return [state, id ? {loading, store, refresh, update: updateSingle, destroy: destroySingle} : {loading, store, update: updateList, destroy: destroyList, refresh}]
 }
