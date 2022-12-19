@@ -1,7 +1,7 @@
 import { AxiosInstance } from "axios";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import pluralize from "pluralize";
-import useSocket from "@enymo/react-socket-hook";
+import useSocket, { useSocketClient } from "@enymo/react-socket-hook";
 import { filter, identity, objectToFormData } from "./util";
 
 type Handler<T, U> = (item: T, prev: U) => U;
@@ -88,7 +88,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     const [loading, setLoading] = useState(autoRefresh);
     const [eventOverride, setEventOverride] = useState(null);
     
-    const event = eventOverrideProp ?? eventOverride ?? resource;
+    const event = useSocketClient() && (eventOverrideProp ?? eventOverride ?? resource);
     const paramName = useMemo(() => paramNameOverride ?? (resource && pluralize.singular(resource.split(".").pop()).replace(/-/g, "_")), [paramNameOverride, resource]);
 
     const isArray = useCallback((input: T | T[]): input is T[] => {
@@ -111,9 +111,9 @@ export default function useResource<T extends Resource, U extends Resource = T>(
         }
     }, [onDestroyed, setState, id]);
 
-    useSocket<U>(!id && `${event}.created`, async item => !loading && handleCreated(filter(await transformer(item))), [loading, handleCreated]);
-    useSocket<Partial<U>>(`${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
-    useSocket<number|string>(`${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
+    useSocket<U>(!id && event && `${event}.created`, async item => !loading && handleCreated(filter(await transformer(item))), [loading, handleCreated]);
+    useSocket<Partial<U>>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
+    useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
     const store = useCallback(async (item: Partial<T> = {}) => {
         const body = await inverseTransformer(item);
