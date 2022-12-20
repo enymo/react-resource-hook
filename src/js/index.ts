@@ -122,7 +122,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
                 "content-type": "multipart/form-data"
             }
         } : {});
-        if (!id && !event) {
+        if (id === undefined && !event) {
             handleCreated(await transformer(response.data));
         }
         return response.data.id;
