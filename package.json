@@ -1,6 +1,6 @@
 {
   "name": "@enymo/react-resource-hook",
-  "version": "1.5.6",
+  "version": "1.5.7",
   "description": "Full featured hook for interacting with rest apis",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
