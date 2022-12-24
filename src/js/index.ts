@@ -49,13 +49,13 @@ interface ReturnCommon<T extends Resource> {
     refresh: () => Promise<void>
 }
 
-interface ReturnList<T extends Resource> extends ReturnCommon<T> {
+export interface ReturnList<T extends Resource> extends ReturnCommon<T> {
     update: (id: string | number, update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>,
     
     destroy: (id: string | number, updateMethod?: UpdateMethod) => Promise<void>
 }
 
-interface ReturnSingle<T extends Resource> extends ReturnCommon<T> {
+export interface ReturnSingle<T extends Resource> extends ReturnCommon<T> {
     update: (update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>,
     destroy: (updateMethod?: UpdateMethod) => Promise<void>
 }
