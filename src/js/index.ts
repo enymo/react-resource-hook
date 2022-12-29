@@ -6,6 +6,7 @@ import { filter, identity, objectToFormData } from "./util";
 
 type Handler<T, U> = (item: T, prev: U) => U;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
+type Params = {[param: string]: string|number|Params}
 
 interface Resource {
     id: string|number
@@ -13,7 +14,7 @@ interface Resource {
 
 interface OptionsCommon<T, U> {
     paramName?: string,
-    params?: {[param: string]: string|number},
+    params?: Params,
     socketEvent?: string,
     defaultUpdateMethod?: UpdateMethod,
     useFormData?: boolean,
@@ -60,9 +61,11 @@ export interface ReturnSingle<T extends Resource> extends ReturnCommon<T> {
     destroy: (updateMethod?: UpdateMethod) => Promise<void>
 }
 
+export type RouteFunction = (route: string, params: Params) => string
+
 const Context = createContext<{
     axios: AxiosInstance,
-    routeFunction: (route: string, params: {[param: string]: string | number}) => string
+    routeFunction: RouteFunction
 }>(null);
 
 export const ResourceProvider = Context.Provider;
