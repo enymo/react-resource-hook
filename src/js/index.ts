@@ -12,7 +12,7 @@ interface Resource {
     id: string|number
 }
 
-interface OptionsCommon<T, U> {
+interface OptionsCommon<T, U, V> {
     paramName?: string,
     params?: Params,
     socketEvent?: string,
@@ -21,43 +21,42 @@ interface OptionsCommon<T, U> {
     autoRefresh?: boolean,
     transformer?(item: U): T | Promise<T>,
     transformer?(item: Partial<U>) : Partial<T> | Promise<Partial<T>>,
-    inverseTransformer?(item: T): U | Promise<U>,
-    inverseTransformer?(item: Partial<T>): Partial<U> | Promise<Partial<U>>
+    inverseTransformer?(item: V): U | Promise<U>,
+    inverseTransformer?(item: Partial<V>): Partial<U> | Promise<Partial<U>>
 }
 
-interface OptionsList<T, U> extends OptionsCommon<T, U> {
+interface OptionsList<T, U, V> extends OptionsCommon<T, U, V> {
     onCreated?: Handler<T, T[]>,
     onUpdated?: Handler<Partial<T>, T[]>,
     onDestroyed?: (id: number|string, prev: T[]) => T[]
 }
 
-interface OptionsSingle<T, U> extends OptionsCommon<T, U> {
+interface OptionsSingle<T, U, V> extends OptionsCommon<T, U, V> {
     id: string|number,
     onUpdated?: Handler<Partial<T>, T>,
     onDestroyed?: (item: number|string) => void
 }
 
-interface OptionsImplementation<T, U> extends OptionsCommon<T, U> {
+interface OptionsImplementation<T, U, V> extends OptionsCommon<T, U, V> {
     id?: string|number,
     onCreated?: Handler<T, T | T[]>,
     onUpdated?: Handler<Partial<T>, T | T[]>,
     onDestroyed?: (id: number|string, prev?: T[]) => void | T[]
 }
 
-interface ReturnCommon<T extends Resource> {
+interface ReturnCommon<T extends Resource, V> {
     loading: boolean,
-    store: (item?: Partial<T>) => Promise<T["id"]>,
+    store: (item?: Partial<V>) => Promise<T["id"]>,
     refresh: () => Promise<void>
 }
 
-export interface ReturnList<T extends Resource> extends ReturnCommon<T> {
-    update: (id: string | number, update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>,
-    
+export interface ReturnList<T extends Resource, V = T> extends ReturnCommon<T, V> {
+    update: (id: string | number, update: Partial<V>, updateMethod?: UpdateMethod) => Promise<void>,
     destroy: (id: string | number, updateMethod?: UpdateMethod) => Promise<void>
 }
 
-export interface ReturnSingle<T extends Resource> extends ReturnCommon<T> {
-    update: (update: Partial<T>, updateMethod?: UpdateMethod) => Promise<void>,
+export interface ReturnSingle<T extends Resource, V = T> extends ReturnCommon<T, V> {
+    update: (update: Partial<V>, updateMethod?: UpdateMethod) => Promise<void>,
     destroy: (updateMethod?: UpdateMethod) => Promise<void>
 }
 
@@ -70,9 +69,9 @@ const Context = createContext<{
 
 export const ResourceProvider = Context.Provider;
 
-export default function useResource<T extends Resource, U extends Resource = T>(resource: string, options?: OptionsList<T, U>): [T[], ReturnList<T>];
-export default function useResource<T extends Resource, U extends Resource = T>(resource: string, options: OptionsSingle<T, U>): [T, ReturnSingle<T>];
-export default function useResource<T extends Resource, U extends Resource = T>(resource: string, {
+export default function useResource<T extends Resource, U extends Resource = T, V = T>(resource: string, options?: OptionsList<T, U, V>): [T[], ReturnList<T, V>];
+export default function useResource<T extends Resource, U extends Resource = T, V = T>(resource: string, options: OptionsSingle<T, U, V>): [T, ReturnSingle<T, V>];
+export default function useResource<T extends Resource, U extends Resource = T, V = T>(resource: string, {
     id,
     paramName: paramNameOverride,
     params,
@@ -85,7 +84,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     onCreated,
     onUpdated,
     onDestroyed
-}: OptionsImplementation<T, U> = {}): [T[] | T, ReturnList<T> | ReturnSingle<T>] {
+}: OptionsImplementation<T, U, V> = {}): [T[] | T, ReturnList<T, V> | ReturnSingle<T, V>] {
     const {axios, routeFunction} = useContext(Context);
     const [state, setState] = useState<T[] | T>(id === undefined ? [] : null);
     const [loading, setLoading] = useState(autoRefresh);
@@ -118,7 +117,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     useSocket<Partial<U>>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
     useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
-    const store = useCallback(async (item: Partial<T> = {}) => {
+    const store = useCallback(async (item: Partial<V> = {}) => {
         const body = await inverseTransformer(item);
         let response = await axios.post<U>(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body) : body, useFormData ? {
             headers: {
@@ -131,7 +130,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
         return response.data.id;
     }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
 
-    const updateList = useCallback(async (id: string|number, update: Partial<T>, updateMethodOverride?: UpdateMethod) => {
+    const updateList = useCallback(async (id: string|number, update: Partial<V>, updateMethodOverride?: UpdateMethod) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
         const route = routeFunction(`${resource}.update`, {
             [paramName]: id,
@@ -153,7 +152,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
         else {
             handleUpdated({
                 id,
-                ...update
+                ...update as unknown as Partial<T>
             });
             if (updateMethod === "immediate") {
                 await axios.put(route, useFormData ? objectToFormData(body) : body, config);
@@ -161,7 +160,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
         }
     }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer]);
 
-    const updateSingle = useCallback((update: Partial<T>, updateMethodOverride?: UpdateMethod) => {
+    const updateSingle = useCallback((update: Partial<V>, updateMethodOverride?: UpdateMethod) => {
         return updateList(id, update, updateMethodOverride);
     }, [id, updateList]);
 
