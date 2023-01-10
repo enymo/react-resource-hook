@@ -12,51 +12,49 @@ interface Resource {
     id: string|number
 }
 
-interface OptionsCommon<T, U, V> {
+interface OptionsCommon<T, U> {
     paramName?: string,
     params?: Params,
     socketEvent?: string,
     defaultUpdateMethod?: UpdateMethod,
     useFormData?: boolean,
     autoRefresh?: boolean,
-    transformer?(item: U): T | Promise<T>,
-    transformer?(item: Partial<U>) : Partial<T> | Promise<Partial<T>>,
-    inverseTransformer?(item: V): U | Promise<U>,
-    inverseTransformer?(item: Partial<V>): Partial<U> | Promise<Partial<U>>
+    transformer?(item: any): Partial<T> | Promise<Partial<T>>,
+    inverseTransformer?(item: Partial<U>): any | Promise<any>
 }
 
-interface OptionsList<T, U, V> extends OptionsCommon<T, U, V> {
+interface OptionsList<T, U> extends OptionsCommon<T, U> {
     onCreated?: Handler<T, T[]>,
     onUpdated?: Handler<Partial<T>, T[]>,
     onDestroyed?: (id: number|string, prev: T[]) => T[]
 }
 
-interface OptionsSingle<T, U, V> extends OptionsCommon<T, U, V> {
+interface OptionsSingle<T, U> extends OptionsCommon<T, U> {
     id: string|number,
     onUpdated?: Handler<Partial<T>, T>,
     onDestroyed?: (item: number|string) => void
 }
 
-interface OptionsImplementation<T, U, V> extends OptionsCommon<T, U, V> {
+interface OptionsImplementation<T, U> extends OptionsCommon<T, U> {
     id?: string|number,
     onCreated?: Handler<T, T | T[]>,
     onUpdated?: Handler<Partial<T>, T | T[]>,
     onDestroyed?: (id: number|string, prev?: T[]) => void | T[]
 }
 
-interface ReturnCommon<T extends Resource, V> {
+interface ReturnCommon<T extends Resource, U> {
     loading: boolean,
-    store: (item?: Partial<V>) => Promise<T["id"]>,
+    store: (item?: Partial<U>) => Promise<T["id"]>,
     refresh: () => Promise<void>
 }
 
-export interface ReturnList<T extends Resource, V = T> extends ReturnCommon<T, V> {
-    update: (id: string | number, update: Partial<V>, updateMethod?: UpdateMethod) => Promise<void>,
+export interface ReturnList<T extends Resource, U = T> extends ReturnCommon<T, U> {
+    update: (id: string | number, update: Partial<U>, updateMethod?: UpdateMethod) => Promise<void>,
     destroy: (id: string | number, updateMethod?: UpdateMethod) => Promise<void>
 }
 
-export interface ReturnSingle<T extends Resource, V = T> extends ReturnCommon<T, V> {
-    update: (update: Partial<V>, updateMethod?: UpdateMethod) => Promise<void>,
+export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T, U> {
+    update: (update: Partial<U>, updateMethod?: UpdateMethod) => Promise<void>,
     destroy: (updateMethod?: UpdateMethod) => Promise<void>
 }
 
@@ -69,9 +67,9 @@ const Context = createContext<{
 
 export const ResourceProvider = Context.Provider;
 
-export default function useResource<T extends Resource, U extends Resource = T, V = T>(resource: string, options?: OptionsList<T, U, V>): [T[], ReturnList<T, V>];
-export default function useResource<T extends Resource, U extends Resource = T, V = T>(resource: string, options: OptionsSingle<T, U, V>): [T, ReturnSingle<T, V>];
-export default function useResource<T extends Resource, U extends Resource = T, V = T>(resource: string, {
+export default function useResource<T extends Resource, U = T>(resource: string, options?: OptionsList<T, U>): [T[], ReturnList<T, U>];
+export default function useResource<T extends Resource, U = T>(resource: string, options: OptionsSingle<T, U>): [T, ReturnSingle<T, U>];
+export default function useResource<T extends Resource, U = T>(resource: string, {
     id,
     paramName: paramNameOverride,
     params,
@@ -84,7 +82,7 @@ export default function useResource<T extends Resource, U extends Resource = T, 
     onCreated,
     onUpdated,
     onDestroyed
-}: OptionsImplementation<T, U, V> = {}): [T[] | T, ReturnList<T, V> | ReturnSingle<T, V>] {
+}: OptionsImplementation<T, U> = {}): [T[] | T, ReturnList<T, U> | ReturnSingle<T, U>] {
     const {axios, routeFunction} = useContext(Context);
     const [state, setState] = useState<T[] | T>(id === undefined ? [] : null);
     const [loading, setLoading] = useState(autoRefresh);
@@ -97,7 +95,7 @@ export default function useResource<T extends Resource, U extends Resource = T, 
         return id === undefined;
     }, [id]);
 
-    const handle = useCallback(<V = T>(handler: Handler<V, T | T[]>, defaultHandler: Handler<V, T | T[]>) => (item: V) => {
+    const handle = useCallback(<U = T>(handler: Handler<U, T | T[]>, defaultHandler: Handler<U, T | T[]>) => (item: U) => {
         setState(prev => handler?.(item, prev) ?? defaultHandler(item, prev));
     }, [transformer, setState]);
 
@@ -113,24 +111,24 @@ export default function useResource<T extends Resource, U extends Resource = T, 
         }
     }, [onDestroyed, setState, id]);
 
-    useSocket<U>(!id && event && `${event}.created`, async item => !loading && handleCreated(filter(await transformer(item))), [loading, handleCreated]);
-    useSocket<Partial<U>>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
+    useSocket<Resource>(!id && event && `${event}.created`, async item => !loading && handleCreated(filter(await transformer(item) as T)), [loading, handleCreated]);
+    useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
     useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
-    const store = useCallback(async (item: Partial<V> = {}) => {
+    const store = useCallback(async (item: Partial<U> = {}) => {
         const body = await inverseTransformer(item);
-        let response = await axios.post<U>(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body) : body, useFormData ? {
+        let response = await axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body) : body, useFormData ? {
             headers: {
                 "content-type": "multipart/form-data"
             }
         } : {});
         if (id === undefined && !event) {
-            handleCreated(await transformer(response.data));
+            handleCreated(await transformer(response.data) as T);
         }
         return response.data.id;
     }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
 
-    const updateList = useCallback(async (id: string|number, update: Partial<V>, updateMethodOverride?: UpdateMethod) => {
+    const updateList = useCallback(async (id: string|number, update: Partial<U>, updateMethodOverride?: UpdateMethod) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
         const route = routeFunction(`${resource}.update`, {
             [paramName]: id,
@@ -160,7 +158,7 @@ export default function useResource<T extends Resource, U extends Resource = T, 
         }
     }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer]);
 
-    const updateSingle = useCallback((update: Partial<V>, updateMethodOverride?: UpdateMethod) => {
+    const updateSingle = useCallback((update: Partial<U>, updateMethodOverride?: UpdateMethod) => {
         return updateList(id, update, updateMethodOverride);
     }, [id, updateList]);
 
@@ -188,7 +186,7 @@ export default function useResource<T extends Resource, U extends Resource = T, 
                 ...params
             }) : routeFunction(`${resource}.index`, params));
             setEventOverride(response.headers["x-socket-event"] ?? null);
-            setState(await (id ? transformer(response.data) : Promise.all(response.data.map(transformer))));
+            setState(await (id ? transformer(response.data) as T : Promise.all(response.data.map(transformer))));
         }
         setLoading(false);
     }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer]);
