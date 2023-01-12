@@ -149,7 +149,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
         }
         else {
             handleUpdated({
-                ...((state as T[]).find(item => item.id === id)),
+                ...(isArray(state) ? state.find(item => item.id === id) : state),
                 ...update as unknown as Partial<T>
             });
             if (updateMethod === "immediate") {
