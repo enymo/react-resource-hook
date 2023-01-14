@@ -1,4 +1,4 @@
-import { AxiosInstance } from "axios";
+import { AxiosInstance, AxiosRequestConfig } from "axios";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import pluralize from "pluralize";
 import useSocket, { useSocketClient } from "@enymo/react-socket-hook";
@@ -44,18 +44,18 @@ interface OptionsImplementation<T, U> extends OptionsCommon<T, U> {
 
 interface ReturnCommon<T extends Resource, U> {
     loading: boolean,
-    store: (item?: Partial<U>) => Promise<T["id"]>,
-    refresh: () => Promise<void>
+    store: (item?: Partial<U>, config?: AxiosRequestConfig) => Promise<T["id"]>,
+    refresh: (config?: AxiosRequestConfig) => Promise<void>
 }
 
 export interface ReturnList<T extends Resource, U = T> extends ReturnCommon<T, U> {
-    update: (id: string | number, update: Partial<U>, updateMethod?: UpdateMethod) => Promise<void>,
-    destroy: (id: string | number, updateMethod?: UpdateMethod) => Promise<void>
+    update: (id: string | number, update: Partial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    destroy: (id: string | number, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
 }
 
 export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T, U> {
-    update: (update: Partial<U>, updateMethod?: UpdateMethod) => Promise<void>,
-    destroy: (updateMethod?: UpdateMethod) => Promise<void>
+    update: (update: Partial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    destroy: (updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
 }
 
 export type RouteFunction = (route: string, params: Params) => string
@@ -115,31 +115,35 @@ export default function useResource<T extends Resource, U = T>(resource: string,
     useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
     useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
-    const store = useCallback(async (item: Partial<U> = {}) => {
+    const store = useCallback(async (item: Partial<U> = {}, config?: AxiosRequestConfig) => {
         const body = await inverseTransformer(item);
         let response = await axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body) : body, useFormData ? {
+            ...config,
             headers: {
+                ...config.headers,
                 "content-type": "multipart/form-data"
-            }
-        } : {});
+            },
+        } : config);
         if (id === undefined && !event) {
             handleCreated(await transformer(response.data) as T);
         }
         return response.data.id;
     }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
 
-    const updateList = useCallback(async (id: string|number, update: Partial<U>, updateMethodOverride?: UpdateMethod) => {
+    const updateList = useCallback(async (id: string|number, update: Partial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
         const route = routeFunction(`${resource}.update`, {
             [paramName]: id,
             ...params
         });
         const body = filter(await inverseTransformer(update));
-        const config = useFormData ? {
+        const resultConfig: AxiosRequestConfig = useFormData ? {
+            ...config,
             headers: {
+                ...config.headers,
                 "content-type": "multipart/form-data"
             }
-        } : {};
+        } : config;
         if (updateMethod === "on-success") {
             let response = await axios.put<U>(route, useFormData ? objectToFormData(body) : body, config);
             const transformed = filter(await transformer(response.data));
@@ -158,16 +162,16 @@ export default function useResource<T extends Resource, U = T>(resource: string,
         }
     }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer]);
 
-    const updateSingle = useCallback((update: Partial<U>, updateMethodOverride?: UpdateMethod) => {
-        return updateList(id, update, updateMethodOverride);
+    const updateSingle = useCallback((update: Partial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+        return updateList(id, update, updateMethodOverride, config);
     }, [id, updateList]);
 
-    const destroyList = useCallback(async (id: string|number, updateMethodOverride?: UpdateMethod) => {
+    const destroyList = useCallback(async (id: string|number, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
         const promise = updateMethod !== "local-only" && axios.delete(routeFunction(`${resource}.destroy`, {
             [paramName]: id,
             ...params
-        }));
+        }), config);
         if (updateMethod !== "immediate") {
             await promise;
         }
@@ -176,15 +180,15 @@ export default function useResource<T extends Resource, U = T>(resource: string,
         }
     }, [axios, event, resource, params, routeFunction]);
 
-    const destroySingle = useCallback((updateMethodOverride?: UpdateMethod) => destroyList(id, updateMethodOverride), [destroyList, id]);
+    const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => destroyList(id, updateMethodOverride, config), [destroyList, id]);
 
-    const refresh = useCallback(async () => {
+    const refresh = useCallback(async (config?: AxiosRequestConfig) => {
         if (resource && id !== null) {
             setLoading(true);
             const response = await axios.get(id ? routeFunction(`${resource}.show`, {
                 [paramName]: id,
                 ...params
-            }) : routeFunction(`${resource}.index`, params));
+            }) : routeFunction(`${resource}.index`, params), config);
             setEventOverride(response.headers["x-socket-event"] ?? null);
             setState(await (id ? transformer(response.data) as T : Promise.all(response.data.map(transformer))));
         }
