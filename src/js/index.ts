@@ -192,6 +192,10 @@ export default function useResource<T extends Resource, U = T>(resource: string,
             setEventOverride(response.headers["x-socket-event"] ?? null);
             setState(await (id ? transformer(response.data) as T : Promise.all(response.data.map(transformer))));
         }
+        else {
+            setEventOverride(null);
+            setState(null);
+        }
         setLoading(false);
     }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer]);
 
