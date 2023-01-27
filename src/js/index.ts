@@ -145,7 +145,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
             }
         } : config;
         if (updateMethod === "on-success") {
-            let response = await axios.put<U>(route, useFormData ? objectToFormData(body) : body, config);
+            let response = await axios.put<U>(route, useFormData ? objectToFormData(body) : body, resultConfig);
             const transformed = filter(await transformer(response.data));
             if (!event) {
                 handleUpdated(transformed);
