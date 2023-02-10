@@ -14,6 +14,9 @@ export function objectToFormData(input: object, fd = new FormData(), prefix?: st
         else if (typeof value === "object") {
             objectToFormData(value, fd, (prefix ? `${prefix}[${key}]` : key));
         }
+        else {
+            fd.append(prefix ? `${prefix}[${key}]` : key, value);
+        }
     }
     return fd;
 }
