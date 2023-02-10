@@ -118,7 +118,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
 
     const store = useCallback(async (item: Partial<T> = {}) => {
         const body = await inverseTransformer(item);
-        let response = await axios.post<U>(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body) : body, useFormData ? {
+        let response = await axios.post<U>(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
             headers: {
                 "content-type": "multipart/form-data"
             }
