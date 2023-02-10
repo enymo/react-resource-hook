@@ -19,6 +19,7 @@ interface OptionsCommon<T, U> {
     defaultUpdateMethod?: UpdateMethod,
     useFormData?: boolean,
     autoRefresh?: boolean,
+    reactNative?: boolean,
     transformer?(item: any): Partial<T> | Promise<Partial<T>>,
     inverseTransformer?(item: Partial<U>): any | Promise<any>
 }
@@ -76,6 +77,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
     socketEvent: eventOverrideProp,
     defaultUpdateMethod = "on-success",
     useFormData = false,
+    reactNative = false,
     autoRefresh = true,
     transformer = identity,
     inverseTransformer = identity,
@@ -117,7 +119,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
 
     const store = useCallback(async (item: Partial<U> = {}, config?: AxiosRequestConfig) => {
         const body = await inverseTransformer(item);
-        let response = await axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body) : body, useFormData ? {
+        let response = await axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
             ...config,
             headers: {
                 ...config.headers,
@@ -145,7 +147,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
             }
         } : config;
         if (updateMethod === "on-success") {
-            let response = await axios.put<U>(route, useFormData ? objectToFormData(body) : body, resultConfig);
+            let response = await axios.put<U>(route, useFormData ? objectToFormData(body, reactNative) : body, resultConfig);
             const transformed = filter(await transformer(response.data));
             if (!event) {
                 handleUpdated(transformed);
@@ -157,7 +159,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
                 ...update as unknown as Partial<T>
             });
             if (updateMethod === "immediate") {
-                await axios.put(route, useFormData ? objectToFormData(body) : body, config);
+                await axios.put(route, useFormData ? objectToFormData(body, reactNative) : body, config);
             }
         }
     }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer]);
