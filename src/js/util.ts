@@ -17,9 +17,6 @@ export function objectToFormData(input: object, reactNative: boolean, fd = new F
         else {
             fd.append(prefix ? `${prefix}[${key}]` : key, value);
         }
-        else {
-            fd.append(prefix ? `${prefix}[${key}]` : key, value);
-        }
     }
     return fd;
 }
