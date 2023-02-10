@@ -18,6 +18,7 @@ interface OptionsCommon<T, U> {
     defaultUpdateMethod?: UpdateMethod,
     useFormData?: boolean,
     autoRefresh?: boolean,
+    reactNative?: boolean,
     transformer?(item: U): T | Promise<T>,
     transformer?(item: Partial<U>) : Partial<T> | Promise<Partial<T>>,
     inverseTransformer?(item: T): U | Promise<U>,
@@ -75,6 +76,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
     socketEvent: eventOverrideProp,
     defaultUpdateMethod = "on-success",
     useFormData = false,
+    reactNative = false,
     autoRefresh = true,
     transformer = identity,
     inverseTransformer = identity,
@@ -140,7 +142,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
             }
         } : {};
         if (updateMethod === "on-success") {
-            let response = await axios.put<U>(route, useFormData ? objectToFormData(body) : body, config);
+            let response = await axios.put<U>(route, useFormData ? objectToFormData(body, reactNative) : body, config);
             const transformed = filter(await transformer(response.data));
             if (!eventOverride) {
                 handleUpdated(transformed);
@@ -152,7 +154,7 @@ export default function useResource<T extends Resource, U extends Resource = T>(
                 ...update
             });
             if (updateMethod === "immediate") {
-                await axios.put(route, useFormData ? objectToFormData(body) : body, config);
+                await axios.put(route, useFormData ? objectToFormData(body, reactNative) : body, config);
             }
         }
     }, [axios, paramName, eventOverride, resource, params, routeFunction, inverseTransformer, transformer]);
