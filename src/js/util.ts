@@ -4,19 +4,21 @@ export function filter<T>(input: T): T {
 
 export const identity = (input: any) => input
 
-export function objectToFormData(input: object, reactNative: boolean, fd = new FormData(), prefix?: string) {
+function objectToFormDataRecursive(input: any, reactNative: boolean, fd: FormData, path: string) {
+    if (input instanceof File || typeof input !== "object" || (reactNative && "uri" in input && "name" in input && "type" in input)) {
+        fd.append(path, input);
+    }
+    else {
+        for (const [key, value] of Array.isArray(input) ? input.entries() : Object.entries(input)) {
+            objectToFormDataRecursive(value, reactNative, fd, `${path}[${key}]`);
+        }
+    }
+}
+
+export function objectToFormData(input: object, reactNative: boolean) {
+    const fd = new FormData();
     for (const [key, value] of Object.entries(input)) {
-        if (Array.isArray(value)) {
-            for (const val of value) {
-                fd.append((prefix ? `${prefix}[${key}]` : key) + "[]", val);
-            }
-        }
-        else if (typeof value === "object" && (!reactNative || !("uri" in value && "name" in value && "type" in value))) {
-            objectToFormData(value, reactNative, fd, (prefix ? `${prefix}[${key}]` : key));
-        }
-        else {
-            fd.append(prefix ? `${prefix}[${key}]` : key, value);
-        }
+        objectToFormDataRecursive(value, reactNative, fd, key);
     }
     return fd;
 }
