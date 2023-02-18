@@ -122,7 +122,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
         let response = await axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
             ...config,
             headers: {
-                ...config.headers,
+                ...config?.headers,
                 "content-type": "multipart/form-data"
             },
         } : config);
@@ -162,7 +162,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
                 await axios.put(route, useFormData ? objectToFormData(body, reactNative) : body, config);
             }
         }
-    }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer]);
+    }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
     const updateSingle = useCallback((update: Partial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         return updateList(id, update, updateMethodOverride, config);
