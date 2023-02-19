@@ -5,7 +5,12 @@ export function filter<T>(input: T): T {
 export const identity = (input: any) => input
 
 function objectToFormDataRecursive(input: any, reactNative: boolean, fd: FormData, path: string) {
-    if (input instanceof File || typeof input !== "object" || (reactNative && "uri" in input && "name" in input && "type" in input)) {
+    if (
+        input instanceof File
+        || input === null
+        || typeof input !== "object"
+        || (reactNative && "uri" in input && "name" in input && "type" in input)
+    ) {
         fd.append(path, input);
     }
     else {
