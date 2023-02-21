@@ -139,15 +139,18 @@ export default function useResource<T extends Resource, U = T>(resource: string,
             ...params
         });
         const body = filter(await inverseTransformer(update));
-        const resultConfig: AxiosRequestConfig = useFormData ? {
+        const promise = updateMethod !== "local-only" && (useFormData ? axios.post<U>(route, objectToFormData({
+            ...body,
+            _method: "put"
+        }, reactNative), {
             ...config,
             headers: {
                 ...config?.headers,
                 "content-type": "multipart/form-data"
             }
-        } : config;
+        }) : axios.put<U>(route, body, config));
         if (updateMethod === "on-success") {
-            let response = await axios.put<U>(route, useFormData ? objectToFormData(body, reactNative) : body, resultConfig);
+            let response = await promise;
             const transformed = filter(await transformer(response.data));
             if (!event) {
                 handleUpdated(transformed);
@@ -158,9 +161,6 @@ export default function useResource<T extends Resource, U = T>(resource: string,
                 ...(isArray(state) ? state.find(item => item.id === id) : state),
                 ...update as unknown as Partial<T>
             });
-            if (updateMethod === "immediate") {
-                await axios.put(route, useFormData ? objectToFormData(body, reactNative) : body, config);
-            }
         }
     }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
