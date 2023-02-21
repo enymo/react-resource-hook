@@ -142,7 +142,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
         const resultConfig: AxiosRequestConfig = useFormData ? {
             ...config,
             headers: {
-                ...config.headers,
+                ...config?.headers,
                 "content-type": "multipart/form-data"
             }
         } : config;
