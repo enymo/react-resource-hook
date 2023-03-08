@@ -12,7 +12,7 @@ interface Resource {
     id: string|number
 }
 
-type RecusivePartial<T> = {
+export type RecusivePartial<T> = {
     [P in keyof T]?:
         T[P] extends (infer U)[] ? RecusivePartial<U>[] :
         T[P] extends object ? RecusivePartial<T[P]> :
