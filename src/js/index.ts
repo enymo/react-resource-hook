@@ -12,6 +12,13 @@ interface Resource {
     id: string|number
 }
 
+type RecusivePartial<T> = {
+    [P in keyof T]?:
+        T[P] extends (infer U)[] ? RecusivePartial<U>[] :
+        T[P] extends object ? RecusivePartial<T[P]> :
+        T[P];
+};
+
 interface OptionsCommon<T, U> {
     paramName?: string,
     params?: Params,
@@ -20,42 +27,42 @@ interface OptionsCommon<T, U> {
     useFormData?: boolean,
     autoRefresh?: boolean,
     reactNative?: boolean,
-    transformer?(item: any): Partial<T> | Promise<Partial<T>>,
-    inverseTransformer?(item: Partial<U>): any | Promise<any>
+    transformer?(item: any): RecusivePartial<T> | Promise<RecusivePartial<T>>,
+    inverseTransformer?(item: RecusivePartial<U>): any | Promise<any>
 }
 
 interface OptionsList<T, U> extends OptionsCommon<T, U> {
     onCreated?: Handler<T, T[]>,
-    onUpdated?: Handler<Partial<T>, T[]>,
+    onUpdated?: Handler<RecusivePartial<T>, T[]>,
     onDestroyed?: (id: number|string, prev: T[]) => T[]
 }
 
 interface OptionsSingle<T, U> extends OptionsCommon<T, U> {
     id: string|number,
-    onUpdated?: Handler<Partial<T>, T>,
+    onUpdated?: Handler<RecusivePartial<T>, T>,
     onDestroyed?: (item: number|string) => void
 }
 
 interface OptionsImplementation<T, U> extends OptionsCommon<T, U> {
     id?: string|number,
     onCreated?: Handler<T, T | T[]>,
-    onUpdated?: Handler<Partial<T>, T | T[]>,
+    onUpdated?: Handler<RecusivePartial<T>, T | T[]>,
     onDestroyed?: (id: number|string, prev?: T[]) => void | T[]
 }
 
 interface ReturnCommon<T extends Resource, U> {
     loading: boolean,
-    store: (item?: Partial<U>, config?: AxiosRequestConfig) => Promise<T["id"]>,
+    store: (item?: RecusivePartial<U>, config?: AxiosRequestConfig) => Promise<T["id"]>,
     refresh: (config?: AxiosRequestConfig) => Promise<void>
 }
 
 export interface ReturnList<T extends Resource, U = T> extends ReturnCommon<T, U> {
-    update: (id: string | number, update: Partial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    update: (id: string | number, update: RecusivePartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     destroy: (id: string | number, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
 }
 
 export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T, U> {
-    update: (update: Partial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    update: (update: RecusivePartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     destroy: (updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
 }
 
@@ -102,7 +109,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
     }, [transformer, setState]);
 
     const handleCreated = useMemo(() => handle(onCreated, (item, prev) => (prev as T[]).find(s => s.id === item.id) ? prev : [...prev as T[], item]), [handle, onCreated]);
-    const handleUpdated = useMemo(() => handle<Partial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id === item.id ? Object.assign(s, item) : s)) : {...prev, ...item}), [handle, onUpdated]);
+    const handleUpdated = useMemo(() => handle<RecusivePartial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id === item.id ? Object.assign(s, item) : s)) : {...prev, ...item}), [handle, onUpdated]);
     const handleDestroyed = useCallback((delId: number|string) => {
         if (id) {
             onDestroyed?.(delId);
@@ -117,7 +124,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
     useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
     useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
-    const store = useCallback(async (item: Partial<U> = {}, config?: AxiosRequestConfig) => {
+    const store = useCallback(async (item: RecusivePartial<U> = {}, config?: AxiosRequestConfig) => {
         const body = await inverseTransformer(item);
         let response = await axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
             ...config,
@@ -132,7 +139,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
         return response.data.id;
     }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
 
-    const updateList = useCallback(async (id: string|number, update: Partial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+    const updateList = useCallback(async (id: string|number, update: RecusivePartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
         const route = routeFunction(`${resource}.update`, {
             [paramName]: id,
@@ -150,8 +157,7 @@ export default function useResource<T extends Resource, U = T>(resource: string,
             }
         }) : axios.put<U>(route, body, config));
         if (updateMethod === "on-success") {
-            let response = await promise;
-            const transformed = filter(await transformer(response.data));
+            const transformed = filter(await transformer((await promise).data));
             if (!event) {
                 handleUpdated(transformed);
             }
@@ -159,12 +165,12 @@ export default function useResource<T extends Resource, U = T>(resource: string,
         else {
             handleUpdated({
                 ...(isArray(state) ? state.find(item => item.id === id) : state),
-                ...update as unknown as Partial<T>
+                ...update as unknown as RecusivePartial<T>
             });
         }
     }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
-    const updateSingle = useCallback((update: Partial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+    const updateSingle = useCallback((update: RecusivePartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         return updateList(id, update, updateMethodOverride, config);
     }, [id, updateList]);
 
