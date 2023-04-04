@@ -6,7 +6,7 @@ import { filter, identity, objectToFormData } from "./util";
 
 type Handler<T, U> = (item: T, prev: U) => U;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
-type Params = {[param: string]: string|number|boolean|(string|number|boolean)[]|Params}
+export type Params = {[param: string]: string|number|boolean|(string|number|boolean)[]|Params}
 
 interface Resource {
     id: string|number
