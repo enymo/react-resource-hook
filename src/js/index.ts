@@ -32,6 +32,7 @@ interface OptionsCommon<T, U> {
 }
 
 interface OptionsList<T, U> extends OptionsCommon<T, U> {
+    withExtra?: boolean,
     onCreated?: Handler<T, T[]>,
     onUpdated?: Handler<RecusivePartial<T>, T[]>,
     onDestroyed?: (id: number|string, prev: T[]) => T[]
@@ -45,6 +46,7 @@ interface OptionsSingle<T, U> extends OptionsCommon<T, U> {
 
 interface OptionsImplementation<T, U> extends OptionsCommon<T, U> {
     id?: string|number,
+    withExtra?: boolean,
     onCreated?: Handler<T, T | T[]>,
     onUpdated?: Handler<RecusivePartial<T>, T | T[]>,
     onDestroyed?: (id: number|string, prev?: T[]) => void | T[]
@@ -56,9 +58,10 @@ interface ReturnCommon<T extends Resource, U> {
     refresh: (config?: AxiosRequestConfig) => Promise<void>
 }
 
-export interface ReturnList<T extends Resource, U = T> extends ReturnCommon<T, U> {
+export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U> {
     update: (id: string | number, update: RecusivePartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
-    destroy: (id: string | number, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
+    destroy: (id: string | number, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    extra: V
 }
 
 export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T, U> {
@@ -75,9 +78,9 @@ const Context = createContext<{
 
 export const ResourceProvider = Context.Provider;
 
-export default function useResource<T extends Resource, U = T>(resource: string, options?: OptionsList<T, U>): [T[], ReturnList<T, U>];
+export default function useResource<T extends Resource, U = T, V = null>(resource: string, options?: OptionsList<T, U>): [T[], ReturnList<T, U, V>];
 export default function useResource<T extends Resource, U = T>(resource: string, options: OptionsSingle<T, U>): [T, ReturnSingle<T, U>];
-export default function useResource<T extends Resource, U = T>(resource: string, {
+export default function useResource<T extends Resource, U = T, V = null>(resource: string, {
     id,
     paramName: paramNameOverride,
     params,
@@ -86,14 +89,16 @@ export default function useResource<T extends Resource, U = T>(resource: string,
     useFormData = false,
     reactNative = false,
     autoRefresh = true,
+    withExtra = false,
     transformer = identity,
     inverseTransformer = identity,
     onCreated,
     onUpdated,
     onDestroyed
-}: OptionsImplementation<T, U> = {}): [T[] | T, ReturnList<T, U> | ReturnSingle<T, U>] {
+}: OptionsImplementation<T, U> = {}): [T[] | T, ReturnList<T, U, V> | ReturnSingle<T, U>] {
     const {axios, routeFunction} = useContext(Context);
     const [state, setState] = useState<T[] | T>(id === undefined ? [] : null);
+    const [extra, setExtra] = useState<V>(null);
     const [loading, setLoading] = useState(autoRefresh);
     const [eventOverride, setEventOverride] = useState(null);
     
@@ -198,14 +203,24 @@ export default function useResource<T extends Resource, U = T>(resource: string,
                 ...params
             }) : routeFunction(`${resource}.index`, params), config);
             setEventOverride(response.headers["x-socket-event"] ?? null);
-            setState(await (id ? transformer(response.data) as T : Promise.all(response.data.map(transformer))));
+            const data = (() => {
+                if (withExtra) {
+                    const {data, ...extra} = response.data;
+                    setExtra(extra);
+                    return data;
+                }
+                else {
+                    return response.data;
+                }
+            })()
+            setState(await (id ? transformer(data) as T : Promise.all(data.map(transformer))));
         }
         else {
             setEventOverride(null);
             setState(null);
         }
         setLoading(false);
-    }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer]);
+    }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer, params]);
 
     useEffect(() => {
         if (autoRefresh) {
@@ -213,5 +228,5 @@ export default function useResource<T extends Resource, U = T>(resource: string,
         }
     }, [refresh, autoRefresh]);
 
-    return [state, id ? {loading, store, refresh, update: updateSingle, destroy: destroySingle} : {loading, store, update: updateList, destroy: destroyList, refresh}]
+    return [state, id ? {loading, store, refresh, update: updateSingle, destroy: destroySingle} : {loading, store, update: updateList, destroy: destroyList, refresh, extra}]
 }
