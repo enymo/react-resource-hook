@@ -125,7 +125,7 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
         }
     }, [onDestroyed, setState, id]);
 
-    useSocket<Resource>(!id && event && `${event}.created`, async item => !loading && handleCreated(filter(await transformer(item) as T)), [loading, handleCreated]);
+    useSocket<Resource>(id === undefined && event && `${event}.created`, async item => !loading && handleCreated(filter(await transformer(item) as T)), [loading, handleCreated]);
     useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
     useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
