@@ -116,7 +116,7 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
     const handleCreated = useMemo(() => handle(onCreated, (item, prev) => (prev as T[]).find(s => s.id === item.id) ? prev : [...prev as T[], item]), [handle, onCreated]);
     const handleUpdated = useMemo(() => handle<RecusivePartial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id === item.id ? Object.assign(s, item) : s)) : {...prev, ...item}), [handle, onUpdated]);
     const handleDestroyed = useCallback((delId: number|string) => {
-        if (id) {
+        if (id !== undefined) {
             onDestroyed?.(delId);
             setState(null);
         }
