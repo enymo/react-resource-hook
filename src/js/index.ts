@@ -1,7 +1,7 @@
-import { AxiosInstance, AxiosRequestConfig } from "axios";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import pluralize from "pluralize";
 import useSocket, { useSocketClient } from "@enymo/react-socket-hook";
+import { AxiosInstance, AxiosRequestConfig } from "axios";
+import pluralize from "pluralize";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { filter, identity, objectToFormData } from "./util";
 
 type Handler<T, U> = (item: T, prev: U) => U;
@@ -173,7 +173,7 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
                 ...update as unknown as RecusivePartial<T>
             });
         }
-    }, [axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
+    }, [state, axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
     const updateSingle = useCallback((update: RecusivePartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         return updateList(id, update, updateMethodOverride, config);
