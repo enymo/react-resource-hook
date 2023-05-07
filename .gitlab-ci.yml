@@ -13,12 +13,21 @@ build:
   script:
     - npm i --no-audit
     - npm run build
-publish:
+publish-release:
   variables:
     GIT_STRATEGY: none
   stage: deploy
-  only:
-    - tags
+  rules:
+    - if: "$CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/"
   script:
     - echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" > .npmrc
     - npm publish
+publish-beta:
+  variables:
+    GIT_STRATEGY: none
+  stage: deploy
+  rules:
+    - if: "$CI_COMMIT_TAG ~= /^v\d+\.\d+\.\d+-beta\.\d+$/"
+  script:
+    - echo "//${CI_SERVER_HOST}/api/v4/projects/${CI_PROJECT_ID}/packages/npm/:_authToken=${CI_JOB_TOKEN}" > .npmrc
+    - npm publish --tag beta
