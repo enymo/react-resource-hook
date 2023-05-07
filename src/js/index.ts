@@ -2,14 +2,15 @@ import useSocket, { useSocketClient } from "@enymo/react-socket-hook";
 import { AxiosInstance, AxiosRequestConfig } from "axios";
 import pluralize from "pluralize";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { filter, identity, objectToFormData } from "./util";
+import { filter, identity, objectToFormData, pruneUnchanged, randomString } from "./util";
 
 type Handler<T, U> = (item: T, prev: U) => U;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
 export type Params = {[param: string]: string|number|boolean|(string|number|boolean)[]|Params}
 
 interface Resource {
-    id: string|number
+    id: string|number,
+    _state?: string
 }
 
 export type RecusivePartial<T> = {
@@ -26,7 +27,7 @@ interface OptionsCommon<T, U> {
     defaultUpdateMethod?: UpdateMethod,
     useFormData?: boolean,
     autoRefresh?: boolean,
-    reactNative?: boolean,
+    pruneUnchanged?: boolean,
     transformer?(item: any): RecusivePartial<T> | Promise<RecusivePartial<T>>,
     inverseTransformer?(item: RecusivePartial<U>): any | Promise<any>
 }
@@ -38,29 +39,29 @@ interface OptionsList<T, U> extends OptionsCommon<T, U> {
     onDestroyed?: (id: number|string, prev: T[]) => T[]
 }
 
-interface OptionsSingle<T, U> extends OptionsCommon<T, U> {
-    id: string|number,
+interface OptionsSingle<T extends Resource, U> extends OptionsCommon<T, U> {
+    id: T["id"] | "single",
     onUpdated?: Handler<RecusivePartial<T>, T>,
     onDestroyed?: (item: number|string) => void
 }
 
-interface OptionsImplementation<T, U> extends OptionsCommon<T, U> {
-    id?: string|number,
+interface OptionsImplementation<T extends Resource, U> extends OptionsCommon<T, U> {
+    id?: T["id"] | "single",
     withExtra?: boolean,
     onCreated?: Handler<T, T | T[]>,
     onUpdated?: Handler<RecusivePartial<T>, T | T[]>,
-    onDestroyed?: (id: number|string, prev?: T[]) => void | T[]
+    onDestroyed?: (id: T["id"], prev?: T[]) => void | T[]
 }
 
 interface ReturnCommon<T extends Resource, U> {
     loading: boolean,
-    store: (item?: RecusivePartial<U>, config?: AxiosRequestConfig) => Promise<T["id"]>,
+    store: (item?: RecusivePartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<T["id"]>,
     refresh: (config?: AxiosRequestConfig) => Promise<void>
 }
 
 export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U> {
-    update: (id: string | number, update: RecusivePartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
-    destroy: (id: string | number, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    update: (id: T["id"], update: RecusivePartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    destroy: (id: T["id"], updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     extra: V
 }
 
@@ -73,7 +74,8 @@ export type RouteFunction = (route: string, params: Params) => string
 
 const Context = createContext<{
     axios: AxiosInstance,
-    routeFunction: RouteFunction
+    routeFunction: RouteFunction,
+    reactNative?: boolean
 }>(null);
 
 export const ResourceProvider = Context.Provider;
@@ -87,22 +89,31 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
     socketEvent: eventOverrideProp,
     defaultUpdateMethod = "on-success",
     useFormData = false,
-    reactNative = false,
     autoRefresh = true,
     withExtra = false,
+    pruneUnchanged: pruneUnchangedProp = false,
     transformer = identity,
     inverseTransformer = identity,
     onCreated,
     onUpdated,
     onDestroyed
 }: OptionsImplementation<T, U> = {}): [T[] | T, ReturnList<T, U, V> | ReturnSingle<T, U>] {
-    const {axios, routeFunction} = useContext(Context);
+    const {axios, routeFunction, reactNative = false} = useContext(Context);
     const [state, setState] = useState<T[] | T>(id === undefined ? [] : null);
     const [extra, setExtra] = useState<V>(null);
     const [loading, setLoading] = useState(autoRefresh);
     const [eventOverride, setEventOverride] = useState(null);
     
-    const event = useSocketClient() && (eventOverrideProp ?? eventOverride ?? resource);
+    const socketClient = useSocketClient();
+    const event = useMemo(() => socketClient && (eventOverrideProp ?? eventOverride ?? resource.split(".").map(part => {
+        const singular = pluralize.singular(part);
+        return (singular in params) ? `${part}.${params[singular]}` : part;
+    }).join(".")), [
+        socketClient,
+        eventOverrideProp,
+        eventOverride,
+        resource
+    ]);
     const paramName = useMemo(() => paramNameOverride ?? (resource && pluralize.singular(resource.split(".").pop()).replace(/-/g, "_")), [paramNameOverride, resource]);
 
     const isArray = useCallback((input: T | T[]): input is T[] => {
@@ -113,9 +124,9 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
         setState(prev => handler?.(item, prev) ?? defaultHandler(item, prev));
     }, [transformer, setState]);
 
-    const handleCreated = useMemo(() => handle(onCreated, (item, prev) => (prev as T[]).find(s => s.id === item.id) ? prev : [...prev as T[], item]), [handle, onCreated]);
-    const handleUpdated = useMemo(() => handle<RecusivePartial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id === item.id ? Object.assign(s, item) : s)) : {...prev, ...item}), [handle, onUpdated]);
-    const handleDestroyed = useCallback((delId: number|string) => {
+    const handleCreated = useMemo(() => handle(onCreated, (item, prev) => (prev as T[]).find(s => s.id == item.id || s._state === item._state) ? prev : [...prev as T[], item]), [handle, onCreated]);
+    const handleUpdated = useMemo(() => handle<RecusivePartial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id == item.id ? Object.assign(s, item) : s)) : {...prev, ...item}), [handle, onUpdated]);
+    const handleDestroyed = useCallback((delId: T["id"]) => {
         if (id !== undefined) {
             onDestroyed?.(delId);
             setState(null);
@@ -129,28 +140,35 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
     useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
     useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
-    const store = useCallback(async (item: RecusivePartial<U> = {}, config?: AxiosRequestConfig) => {
+    const store = useCallback(async (item: RecusivePartial<U> = {}, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+        const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
         const body = await inverseTransformer(item);
-        let response = await axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
+        body._state ??= randomString(12);
+        const promise = updateMethod !== "local-only" && axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
             ...config,
             headers: {
                 ...config?.headers,
                 "content-type": "multipart/form-data"
             },
         } : config);
-        if (id === undefined && !event) {
+        if (updateMethod === "on-success") {
+            const response = await promise;
             handleCreated(await transformer(response.data) as T);
+            return response.data.id
         }
-        return response.data.id;
+        else {
+            handleCreated({...item, id: null} as T);
+            return null;
+        }
     }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
 
-    const updateList = useCallback(async (id: string|number, update: RecusivePartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+    const updateList = useCallback(async (id: T["id"] | "single", update: RecusivePartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-        const route = routeFunction(`${resource}.update`, {
+        const route = routeFunction(`${resource}.update`, id === "single" ? params : {
             [paramName]: id,
             ...params
         });
-        const body = filter(await inverseTransformer(update));
+        const body = filter(await inverseTransformer(pruneUnchangedProp ? pruneUnchanged(update, isArray(state) ? state.find(item => item.id == id) : state, reactNative) : update));
         const promise = updateMethod !== "local-only" && (useFormData ? axios.post<U>(route, objectToFormData({
             ...body,
             _method: "put"
@@ -162,16 +180,10 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
             }
         }) : axios.put<U>(route, body, config));
         if (updateMethod === "on-success") {
-            const transformed = filter(await transformer((await promise).data));
-            if (!event) {
-                handleUpdated(transformed);
-            }
+            handleUpdated(filter(await transformer((await promise).data)));
         }
         else {
-            handleUpdated({
-                ...(isArray(state) ? state.find(item => item.id === id) : state),
-                ...update as unknown as RecusivePartial<T>
-            });
+            handleUpdated({...update, id} as RecusivePartial<T>);
         }
     }, [state, axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
@@ -179,9 +191,9 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
         return updateList(id, update, updateMethodOverride, config);
     }, [id, updateList]);
 
-    const destroyList = useCallback(async (id: string|number, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+    const destroyList = useCallback(async (id: T["id"] | "single", updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-        const promise = updateMethod !== "local-only" && axios.delete(routeFunction(`${resource}.destroy`, {
+        const promise = updateMethod !== "local-only" && axios.delete(routeFunction(`${resource}.destroy`, id === "single" ? params : {
             [paramName]: id,
             ...params
         }), config);
@@ -198,7 +210,7 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
     const refresh = useCallback(async (config?: AxiosRequestConfig) => {
         if (resource && id !== null) {
             setLoading(true);
-            const response = await axios.get(id ? routeFunction(`${resource}.show`, {
+            const response = await axios.get(id ? routeFunction(`${resource}.show`, id === "single" ? params : {
                 [paramName]: id,
                 ...params
             }) : routeFunction(`${resource}.index`, params), config);
