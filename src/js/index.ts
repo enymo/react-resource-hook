@@ -105,7 +105,7 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
     const [eventOverride, setEventOverride] = useState(null);
     
     const socketClient = useSocketClient();
-    const event = useMemo(() => socketClient && (eventOverrideProp ?? eventOverride ?? resource.split(".").map(part => {
+    const event = useMemo(() => socketClient && (eventOverrideProp ?? eventOverride ?? resource?.split(".").map(part => {
         const singular = pluralize.singular(part);
         return (params && singular in params) ? `${part}.${params[singular]}` : part;
     }).join(".")), [
