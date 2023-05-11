@@ -70,7 +70,7 @@ export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T,
     destroy: (updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
 }
 
-export type RouteFunction = (route: string, params: Params) => string
+export type RouteFunction = (route: string, params?: Params) => string
 
 const Context = createContext<{
     axios: AxiosInstance,
