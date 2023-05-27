@@ -7,7 +7,8 @@ import { filter, identity, objectToFormData, pruneUnchanged, randomString } from
 
 type Handler<T, U> = (item: T, prev: U) => U;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
-export type Params = {[param: string]: string|number|boolean|(string|number|boolean)[]|Params}
+type Param = string|number|boolean;
+export type Params = {[param: string]: Param|Param[]|Params}
 
 interface StatefulObject {
     _state?: string
