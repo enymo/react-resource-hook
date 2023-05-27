@@ -2,23 +2,32 @@ import useSocket, { useSocketClient } from "@enymo/react-socket-hook";
 import { AxiosInstance, AxiosRequestConfig } from "axios";
 import pluralize from "pluralize";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { DeepPartial } from "ts-essentials";
 import { filter, identity, objectToFormData, pruneUnchanged, randomString } from "./util";
 
 type Handler<T, U> = (item: T, prev: U) => U;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
 export type Params = {[param: string]: string|number|boolean|(string|number|boolean)[]|Params}
 
-interface Resource {
-    id: string|number,
+interface StatefulObject {
     _state?: string
 }
 
-export type RecusivePartial<T> = {
-    [P in keyof T]?:
-        T[P] extends (infer U)[] ? RecusivePartial<U>[] :
-        T[P] extends object ? RecusivePartial<T[P]> :
-        T[P];
-};
+interface Resource extends StatefulObject {
+    id: string|number
+}
+
+interface Test {
+    a: {
+        b: {
+            c: [string, number]
+        },
+        d: {
+            e: string,
+            f: string
+        }
+    }
+}
 
 interface OptionsCommon<T, U> {
     paramName?: string,
@@ -28,20 +37,20 @@ interface OptionsCommon<T, U> {
     useFormData?: boolean,
     autoRefresh?: boolean,
     pruneUnchanged?: boolean,
-    transformer?(item: any): RecusivePartial<T> | Promise<RecusivePartial<T>>,
-    inverseTransformer?(item: RecusivePartial<U>): any | Promise<any>
+    transformer?(item: any): DeepPartial<T> | Promise<DeepPartial<T>>,
+    inverseTransformer?(item: DeepPartial<U>): any | Promise<any>
 }
 
 interface OptionsList<T, U> extends OptionsCommon<T, U> {
     withExtra?: boolean,
     onCreated?: Handler<T, T[]>,
-    onUpdated?: Handler<RecusivePartial<T>, T[]>,
+    onUpdated?: Handler<DeepPartial<T>, T[]>,
     onDestroyed?: (id: number|string, prev: T[]) => T[]
 }
 
 interface OptionsSingle<T extends Resource, U> extends OptionsCommon<T, U> {
     id: T["id"] | "single",
-    onUpdated?: Handler<RecusivePartial<T>, T>,
+    onUpdated?: Handler<DeepPartial<T>, T>,
     onDestroyed?: (item: number|string) => void
 }
 
@@ -49,24 +58,24 @@ interface OptionsImplementation<T extends Resource, U> extends OptionsCommon<T, 
     id?: T["id"] | "single",
     withExtra?: boolean,
     onCreated?: Handler<T, T | T[]>,
-    onUpdated?: Handler<RecusivePartial<T>, T | T[]>,
+    onUpdated?: Handler<DeepPartial<T>, T | T[]>,
     onDestroyed?: (id: T["id"], prev?: T[]) => void | T[]
 }
 
 interface ReturnCommon<T extends Resource, U> {
     loading: boolean,
-    store: (item?: RecusivePartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<T["id"]>,
+    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<T["id"]>,
     refresh: (config?: AxiosRequestConfig) => Promise<void>
 }
 
 export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U> {
-    update: (id: T["id"], update: RecusivePartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    update: (id: T["id"], update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     destroy: (id: T["id"], updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     extra: V
 }
 
 export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T, U> {
-    update: (update: RecusivePartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    update: (update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     destroy: (updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
 }
 
@@ -80,9 +89,9 @@ const Context = createContext<{
 
 export const ResourceProvider = Context.Provider;
 
-export default function useResource<T extends Resource, U = T, V = null>(resource: string, options?: OptionsList<T, U>): [T[], ReturnList<T, U, V>];
-export default function useResource<T extends Resource, U = T>(resource: string, options: OptionsSingle<T, U>): [T, ReturnSingle<T, U>];
-export default function useResource<T extends Resource, U = T, V = null>(resource: string, {
+export default function useResource<T extends Resource, U extends StatefulObject = T, V = null>(resource: string, options?: OptionsList<T, U>): [T[], ReturnList<T, U, V>];
+export default function useResource<T extends Resource, U extends StatefulObject = T>(resource: string, options: OptionsSingle<T, U>): [T, ReturnSingle<T, U>];
+export default function useResource<T extends Resource, U extends StatefulObject = T, V = null>(resource: string, {
     id,
     paramName: paramNameOverride,
     params,
@@ -125,7 +134,7 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
     }, [transformer, setState]);
 
     const handleCreated = useMemo(() => handle(onCreated, (item, prev) => (prev as T[]).find(s => s.id == item.id || s._state === item._state) ? prev : [...prev as T[], item]), [handle, onCreated]);
-    const handleUpdated = useMemo(() => handle<RecusivePartial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id == item.id ? Object.assign(s, item) : s)) : {...prev, ...item}), [handle, onUpdated]);
+    const handleUpdated = useMemo(() => handle<DeepPartial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id == item.id ? Object.assign(s, item) : s)) : {...prev, ...item}), [handle, onUpdated]);
     const handleDestroyed = useCallback((delId: T["id"]) => {
         if (id !== undefined) {
             onDestroyed?.(delId);
@@ -140,10 +149,12 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
     useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
     useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
-    const store = useCallback(async (item: RecusivePartial<U> = {}, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+    const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
+        if (updateMethod !== "on-success") {
+            item._state = randomString(12);
+        }
         const body = await inverseTransformer(item);
-        body._state ??= randomString(12);
         const promise = updateMethod !== "local-only" && axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
             ...config,
             headers: {
@@ -162,7 +173,7 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
         }
     }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
 
-    const updateList = useCallback(async (id: T["id"] | "single", update: RecusivePartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+    const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
         const route = routeFunction(`${resource}.update`, id === "single" ? params : {
             [paramName]: id,
@@ -183,11 +194,11 @@ export default function useResource<T extends Resource, U = T, V = null>(resourc
             handleUpdated(filter(await transformer((await promise).data)));
         }
         else {
-            handleUpdated({...update, id} as RecusivePartial<T>);
+            handleUpdated({...update, id} as DeepPartial<T>);
         }
     }, [state, axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
-    const updateSingle = useCallback((update: RecusivePartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+    const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         return updateList(id, update, updateMethodOverride, config);
     }, [id, updateList]);
 

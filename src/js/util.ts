@@ -1,3 +1,5 @@
+import { DeepPartial } from "ts-essentials";
+
 export function filter<T>(input: T): T {
     return Object.fromEntries(Object.entries(input).filter(([,value]) => value !== undefined)) as T;
 }
@@ -61,10 +63,10 @@ function pruneUnchangedRecursive(input: any, comparison: any, reactNative: boole
     }
 }
 
-export function pruneUnchanged(input: object, comparison: object, reactNative: boolean) {
+export function pruneUnchanged<T>(input: object, comparison: object, reactNative: boolean): DeepPartial<T> {
     const target = {}
     pruneUnchangedRecursive(input, comparison, reactNative, target);
-    return target;
+    return target as DeepPartial<T>;
 }
 
 export function randomString(length: number) {
