@@ -1,6 +1,17 @@
 import { DeepPartial } from "ts-essentials";
 
-export function filter<T>(input: T): T {
+export function isNotNull<T>(value: T): value is NonNullable<T> {
+    return value !== undefined && value !== null;
+}
+
+export function requireNotNull<T>(value: T, message: string = "value must not be null"): NonNullable<T> {
+    if (isNotNull(value)) {
+        return value;
+    }
+    throw new TypeError(message);
+}
+
+export function filter<T extends object>(input: T): T {
     return Object.fromEntries(Object.entries(input).filter(([,value]) => value !== undefined)) as T;
 }
 
