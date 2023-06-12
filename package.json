@@ -23,10 +23,7 @@
     "url": "https://gitlab.internal.enymo.com/enymo/library/react-resource-hook.git"
   },
   "author": "enymo GmbH",
-  "license": "UNLICENSED",
-  "publishConfig": {
-    "@enymo:registry": "https://gitlab.internal.enymo.com/api/v4/projects/84/packages/npm/"
-  },
+  "license": "MIT",
   "devDependencies": {
     "@types/pluralize": "^0.0.29",
     "@types/react": "^18.0.25",
