@@ -1,6 +1,6 @@
 # React Resource Hook
 
-React Hook for interacting with rest apis.
+React Hook for interacting with REST APIs.
 
 ## Installation
 The library may be installed from npm using
@@ -15,7 +15,7 @@ npm i @enymo/react-resource-hook
 * Easily incorporate WebSockets to keep your frontend up-to-date as data is changed by other processes.
 
 ## Usage
-In order to use the ```useResource``` hook in your components, you app has to be wrapped with the ResourceProvider to configure the hook
+In order to use the ```useResource``` hook in your components, you app has to be wrapped with the ```ResourceProvider``` to configure the hook
 ```
 import React from "react";
 import { RouteFunction, ResourceProvider } from "@enymo/react-resource-hook";
@@ -32,7 +32,7 @@ function App() {
 ```
 *NOTE* If you're using ziggy-js for the route function: As of 06/12/2023, the typing for ziggy-js is incorrect, but it's implementation isn't. Because of this, ```route``` has to be cast to ```RouteFunction``` to be used with the resource hook.
 
-You can than access resource in your components like this:
+You can then access resource in your components like this:
 ```
 import useResource from "@enymo/react-resource-hook";
 import React from "react";
