@@ -15,6 +15,9 @@
     ],
     "dts": true
   },
+  "files": [
+    "/dist"
+  ],
   "scripts": {
     "build": "tsup"
   },
