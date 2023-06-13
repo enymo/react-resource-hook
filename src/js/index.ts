@@ -106,7 +106,7 @@ interface OptionsSingle<T extends Resource, U> extends OptionsCommon<T, U> {
     /**
      * The id of the resource to be requested or 'single' if it is a [singleton resource]{@link https://www.google.de}
      */
-    id: T["id"] | "single",
+    id: T["id"] | "single" | null,
     /**
      * Called whenever the current item is updated.
      * If its omitted or returns null, the item will simply be updated using the new values,
