@@ -3,18 +3,14 @@ import { AxiosInstance, AxiosRequestConfig } from "axios";
 import pluralize from "pluralize";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { DeepPartial } from "ts-essentials";
-import { filter, identity, isNotNull, objectToFormData, pruneUnchanged, randomString, requireNotNull } from "./util";
+import { filter, identity, isNotNull, objectToFormData, pruneUnchanged, requireNotNull } from "./util";
 
 type Handler<T, U> = (item: T, prev: U | null) => U | null;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
 type Param = string|number|boolean;
 export type Params = {[param: string]: Param|Param[]|Params}
 
-export interface StatefulObject {
-    _state?: string
-}
-
-export interface Resource extends StatefulObject {
+export interface Resource {
     id: string|number
 }
 
@@ -139,15 +135,10 @@ interface ReturnCommon<T extends Resource, U> {
     /**
      * Stores a new item in the current resource
      * @param item The item to be stored
-     * @param updateMethod The update method to be used
-     *  'on-success' will only update the resource in the frontend once the backend returns a successful response. The created item will contain an id and potentially field filled by the backend
-     *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. 
-     *      The created item will have the id set to null and not contain any fields that would be filled by the backend. Once the backend emits a 'created' event (sockets only), the resource will be updated
-     *  'local-only' will update the resourcei in the frontend immediately and not send a request to the backend at all.
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns The created resource.
      */
-    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<T>,
+    store: (item?: DeepPartial<U>, config?: AxiosRequestConfig) => Promise<T>,
     /**
      * Fully refreshed the resource by sending the initial get request again.
      * @param config An axios request config to be used to the request
@@ -245,9 +236,9 @@ export const ResourceProvider = Context.Provider;
  * @param resource 
  * @param options 
  */
-export default function useResource<T extends Resource, U extends StatefulObject = T, V = null>(resource: string | null, options?: OptionsList<T, U>): [T[] | null, ReturnList<T, U, V>];
-export default function useResource<T extends Resource, U extends StatefulObject = T>(resource: string | null, options: OptionsSingle<T, U>): [T | null, ReturnSingle<T, U>];
-export default function useResource<T extends Resource, U extends StatefulObject = T, V = null>(resource: string | null, {
+export default function useResource<T extends Resource, U = T, V = null>(resource: string | null, options?: OptionsList<T, U>): [T[] | null, ReturnList<T, U, V>];
+export default function useResource<T extends Resource, U extends object = T>(resource: string | null, options: OptionsSingle<T, U>): [T | null, ReturnSingle<T, U>];
+export default function useResource<T extends Resource, U extends object = T, V = null>(resource: string | null, {
     id,
     paramName: paramNameOverride,
     params,
@@ -289,7 +280,7 @@ export default function useResource<T extends Resource, U extends StatefulObject
         setState(prev => handler?.(item, prev) ?? defaultHandler(item, prev));
     }, [transformer, setState]);
 
-    const handleCreated = useMemo(() => handle(onCreated, (item, prev) => (isNotNull(prev) && (prev as T[]).find(s => s.id == item.id || s._state === item._state)) ? prev : [...prev as T[], item]), [handle, onCreated]);
+    const handleCreated = useMemo(() => handle(onCreated, (item, prev) => (isNotNull(prev) && (prev as T[]).find(s => s.id == item.id)) ? prev : [...prev as T[], item]), [handle, onCreated]);
     const handleUpdated = useMemo(() => handle<DeepPartial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id == item.id ? Object.assign(s, item) : s)) : {...prev, ...item} as T), [handle, onUpdated]);
     const handleDestroyed = useCallback((delId: T["id"]) => {
         if (id !== undefined) {
@@ -305,30 +296,20 @@ export default function useResource<T extends Resource, U extends StatefulObject
     useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
     useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
 
-    const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
-        const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-        if (updateMethod !== "on-success") {
-            item._state = randomString(12);
-        }
+    const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, config?: AxiosRequestConfig) => {
         const body = await inverseTransformer(item);
-        const promise = updateMethod !== "local-only" ? axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
+        const promise = axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
             ...config,
             headers: {
                 ...config?.headers,
                 "content-type": "multipart/form-data"
             },
-        } : config) : null;
-        if (updateMethod === "on-success") {
-            const response = await promise!;
-            const result = await transformer(response.data) as T;
-            handleCreated(result);
-            return result;
-        }
-        else {
-            const result = {...item, id: null} as T;
-            handleCreated(result);
-            return result;
-        }
+        } : config);
+        const response = await promise!;
+        const result = await transformer(response.data) as T;
+        handleCreated(result);
+        return result;
+
     }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
 
     const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
