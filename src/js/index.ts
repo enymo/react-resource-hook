@@ -1,5 +1,5 @@
 import useSocket, { useSocketClient } from "@enymo/react-socket-hook";
-import { AxiosInstance, AxiosRequestConfig } from "axios";
+import { AxiosError, AxiosInstance, AxiosRequestConfig } from "axios";
 import pluralize from "pluralize";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { DeepPartial } from "ts-essentials";
@@ -360,22 +360,29 @@ export default function useResource<T extends Resource, U extends object = T, V 
     const refresh = useCallback(async (config?: AxiosRequestConfig) => {
         if (resource && id !== null) {
             setLoading(true);
-            const response = await axios.get(id ? routeFunction(`${resource}.show`, id === "single" ? params : {
-                [paramName!]: id,
-                ...params
-            }) : routeFunction(`${resource}.index`, params), config);
-            setEventOverride(response.headers["x-socket-event"] ?? null);
-            const data = (() => {
-                if (withExtra) {
-                    const {data, ...extra} = response.data;
-                    setExtra(extra);
-                    return data;
+            try {
+                const response = await axios.get(id ? routeFunction(`${resource}.show`, id === "single" ? params : {
+                    [paramName!]: id,
+                    ...params
+                }) : routeFunction(`${resource}.index`, params), config);
+                setEventOverride(response.headers["x-socket-event"] ?? null);
+                const data = (() => {
+                    if (withExtra) {
+                        const {data, ...extra} = response.data;
+                        setExtra(extra);
+                        return data;
+                    }
+                    else {
+                        return response.data;
+                    }
+                })()
+                setState(await (id ? transformer(data) as T : Promise.all(data.map(transformer))));
+            }
+            catch (e) {
+                if (!(e instanceof AxiosError)) {
+                    throw e;
                 }
-                else {
-                    return response.data;
-                }
-            })()
-            setState(await (id ? transformer(data) as T : Promise.all(data.map(transformer))));
+            }
         }
         else {
             setEventOverride(null);
