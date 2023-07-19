@@ -236,7 +236,7 @@ export const ResourceProvider = Context.Provider;
  * @param resource 
  * @param options 
  */
-export default function useResource<T extends Resource, U = T, V = null>(resource: string | null, options?: OptionsList<T, U>): [T[] | null, ReturnList<T, U, V>];
+export default function useResource<T extends Resource, U = T, V = null>(resource: string | null, options?: OptionsList<T, U>): [T[], ReturnList<T, U, V>];
 export default function useResource<T extends Resource, U extends object = T>(resource: string | null, options: OptionsSingle<T, U>): [T | null, ReturnSingle<T, U>];
 export default function useResource<T extends Resource, U extends object = T, V = null>(resource: string | null, {
     id,
