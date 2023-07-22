@@ -265,6 +265,7 @@ export default function useResource<T extends Resource, U extends object = T, V 
         const singular = pluralize.singular(part);
         return (params && singular in params) ? `${part}.${params[singular]}` : part;
     }).join(".") ?? null), [
+        params,
         socketClient,
         eventOverrideProp,
         eventOverride,
