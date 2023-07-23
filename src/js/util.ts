@@ -28,7 +28,9 @@ function isAtomic(input: any, reactNative: boolean) {
 
 function objectToFormDataRecursive(input: any, reactNative: boolean, fd: FormData, path: string) {
     if (isAtomic(input, reactNative)) {
-        fd.append(path, input);
+        if (input !== undefined) {
+            fd.append(path, input);
+        }
     }
     else {
         for (const [key, value] of Array.isArray(input) ? input.entries() : Object.entries(input)) {
