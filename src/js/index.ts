@@ -387,7 +387,7 @@ export default function useResource<T extends Resource, U extends object = T, V 
         }
         else {
             setEventOverride(null);
-            setState(null);
+            setState(id === undefined ? [] : null);
         }
         setLoading(false);
     }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer, params]);
