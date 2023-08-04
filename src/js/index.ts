@@ -308,7 +308,9 @@ export default function useResource<T extends Resource, U extends object = T, V 
         } : config);
         const response = await promise!;
         const result = await transformer(response.data) as T;
-        handleCreated(result);
+        if (id === undefined) {
+            handleCreated(result);
+        }
         return result;
 
     }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
