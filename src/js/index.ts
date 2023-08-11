@@ -369,29 +369,22 @@ export default function useResource<T extends Resource, U extends object = T, V 
         setError(null);
         if (resource && id !== null) {
             setLoading(true);
-            try {
-                const response = await axios.get(id ? routeFunction(`${resource}.show`, id === "single" ? params : {
-                    [paramName!]: id,
-                    ...params
-                }) : routeFunction(`${resource}.index`, params), config);
-                setEventOverride(response.headers["x-socket-event"] ?? null);
-                const data = (() => {
-                    if (withExtra) {
-                        const {data, ...extra} = response.data;
-                        setExtra(extra);
-                        return data;
-                    }
-                    else {
-                        return response.data;
-                    }
-                })()
-                setState(await (id ? transformer(data) as T : Promise.all(data.map(transformer))));
-            }
-            catch (e) {
-                if (!(e instanceof AxiosError)) {
-                    throw e;
+            const response = await axios.get(id ? routeFunction(`${resource}.show`, id === "single" ? params : {
+                [paramName!]: id,
+                ...params
+            }) : routeFunction(`${resource}.index`, params), config);
+            setEventOverride(response.headers["x-socket-event"] ?? null);
+            const data = (() => {
+                if (withExtra) {
+                    const {data, ...extra} = response.data;
+                    setExtra(extra);
+                    return data;
                 }
-            }
+                else {
+                    return response.data;
+                }
+            })()
+            setState(await (id ? transformer(data) as T : Promise.all(data.map(transformer))));
         }
         else {
             setEventOverride(null);
