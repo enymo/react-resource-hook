@@ -395,17 +395,14 @@ export default function useResource<T extends Resource, U extends object = T, V 
 
     useEffect(() => {
         if (autoRefresh) {
-            try {
-                refresh();
-            }
-            catch (e) {
+            refresh().catch(e => {
                 if (e instanceof AxiosError) {
                     setError(e);
                 }
                 else {
                     throw e;
                 }
-            }
+            });    
         }
     }, [refresh, autoRefresh, setError]);
 
