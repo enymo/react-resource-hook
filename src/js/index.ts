@@ -144,7 +144,11 @@ interface ReturnCommon<T extends Resource, U> {
      * @param config An axios request config to be used to the request
      * @returns A void promise that resolves when the refresh is complete.
      */
-    refresh: (config?: AxiosRequestConfig) => Promise<void>
+    refresh: (config?: AxiosRequestConfig) => Promise<void>,
+    /**
+     * Error that occured during last auto-refresh. null if no error occured or refresh is still in progress
+     */
+    error: AxiosError | null
 }
 
 export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U> {
@@ -257,6 +261,7 @@ export default function useResource<T extends Resource, U extends object = T, V 
     const {axios, routeFunction, reactNative = false} = requireNotNull(useContext(Context));
     const [state, setState] = useState<T[] | T | null>(id === undefined ? [] : null);
     const [extra, setExtra] = useState<V | null>(null);
+    const [error, setError] = useState<AxiosError | null>(null);
     const [loading, setLoading] = useState(autoRefresh);
     const [eventOverride, setEventOverride] = useState<string | null>(null);
     
@@ -361,6 +366,7 @@ export default function useResource<T extends Resource, U extends object = T, V 
     const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
 
     const refresh = useCallback(async (config?: AxiosRequestConfig) => {
+        setError(null);
         if (resource && id !== null) {
             setLoading(true);
             try {
@@ -392,13 +398,23 @@ export default function useResource<T extends Resource, U extends object = T, V 
             setState(id === undefined ? [] : null);
         }
         setLoading(false);
-    }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer, params]);
+    }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer, params, setError]);
 
     useEffect(() => {
         if (autoRefresh) {
-            refresh();
+            try {
+                refresh();
+            }
+            catch (e) {
+                if (e instanceof AxiosError) {
+                    setError(e);
+                }
+                else {
+                    throw e;
+                }
+            }
         }
-    }, [refresh, autoRefresh]);
+    }, [refresh, autoRefresh, setError]);
 
-    return [state, id ? {loading, store, refresh, update: updateSingle, destroy: destroySingle} : {loading, store, update: updateList, destroy: destroyList, refresh, extra}]
+    return [state, id ? {loading, store, refresh, update: updateSingle, destroy: destroySingle, error} : {loading, store, update: updateList, destroy: destroyList, refresh, extra, error}]
 }
