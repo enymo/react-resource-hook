@@ -358,9 +358,7 @@ export default function useResource<T extends Resource, U extends object = T, V 
         if (updateMethod !== "immediate") {
             await promise;
         }
-        if (updateMethod !== "on-success") {
-            handleDestroyed(id);
-        }
+        handleDestroyed(id);
     }, [axios, resource, params, routeFunction]);
 
     const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
