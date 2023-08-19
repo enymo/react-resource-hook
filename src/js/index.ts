@@ -318,7 +318,7 @@ export default function useResource<T extends Resource, U extends object = T, V 
         }
         return result;
 
-    }, [axios, event, resource, params, routeFunction, transformer, inverseTransformer]);
+    }, [axios, resource, params, routeFunction, transformer, inverseTransformer]);
 
     const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
@@ -343,7 +343,7 @@ export default function useResource<T extends Resource, U extends object = T, V 
         else {
             handleUpdated({...update, id} as DeepPartial<T>);
         }
-    }, [state, axios, paramName, event, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
+    }, [state, axios, paramName, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
     const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         return updateList(requireNotNull(id), update, updateMethodOverride, config);
@@ -358,10 +358,10 @@ export default function useResource<T extends Resource, U extends object = T, V 
         if (updateMethod !== "immediate") {
             await promise;
         }
-        if (!event || updateMethod !== "on-success") {
+        if (updateMethod !== "on-success") {
             handleDestroyed(id);
         }
-    }, [axios, event, resource, params, routeFunction]);
+    }, [axios, resource, params, routeFunction]);
 
     const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
 
