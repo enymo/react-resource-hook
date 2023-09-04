@@ -299,8 +299,8 @@ export default function useResource<T extends Resource, U extends object = T, V 
     }, [onDestroyed, setState, id]);
 
     useSocket<Resource>((id === undefined && event) ? `${event}.created` : null, async item => !loading && handleCreated(filter(await transformer(item) as T)), [loading, handleCreated]);
-    useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === id)) && handleUpdated(filter(await transformer(item))), [id, loading, handleUpdated]);
-    useSocket<number|string>(event && `${event}.destroyed`, id => !loading && handleDestroyed(id), [loading, handleDestroyed]);
+    useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(filter(await transformer(item))), [id, state, loading, handleUpdated]);
+    useSocket<number|string>(event && `${event}.destroyed`, delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId), [id, state, loading, handleDestroyed]);
 
     const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, config?: AxiosRequestConfig) => {
         const body = await inverseTransformer(item);
@@ -341,7 +341,7 @@ export default function useResource<T extends Resource, U extends object = T, V 
             handleUpdated(filter(await transformer((await promise!).data)));
         }
         else {
-            handleUpdated({...update, id} as DeepPartial<T>);
+            handleUpdated(update as DeepPartial<T>);
         }
     }, [state, axios, paramName, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
