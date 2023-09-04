@@ -223,7 +223,7 @@ const Context = createContext<{
      * that uses the same function signature can be used.
      * 
      * NOTE: As of 06/12/2023, ziggy-js types are incorrect, even though the implementation isn't. Therefore, ziggys 'route' has to
-     * be cast to RouteFunction to be used with teh resource hook
+     * be cast to RouteFunction to be used with the resource hook
      */
     routeFunction: RouteFunction,
     /**
