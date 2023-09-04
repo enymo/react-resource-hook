@@ -364,31 +364,35 @@ export default function useResource<T extends Resource, U extends object = T, V 
     const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
 
     const refresh = useCallback(async (config?: AxiosRequestConfig) => {
-        setError(null);
-        if (resource && id !== null) {
-            setLoading(true);
-            const response = await axios.get(id ? routeFunction(`${resource}.show`, id === "single" ? params : {
-                [paramName!]: id,
-                ...params
-            }) : routeFunction(`${resource}.index`, params), config);
-            setEventOverride(response.headers["x-socket-event"] ?? null);
-            const data = (() => {
-                if (withExtra) {
-                    const {data, ...extra} = response.data;
-                    setExtra(extra);
-                    return data;
-                }
-                else {
-                    return response.data;
-                }
-            })()
-            setState(await (id ? transformer(data) as T : Promise.all(data.map(transformer))));
+        try {
+            setError(null);
+            if (resource && id !== null) {
+                setLoading(true);
+                const response = await axios.get(id ? routeFunction(`${resource}.show`, id === "single" ? params : {
+                    [paramName!]: id,
+                    ...params
+                }) : routeFunction(`${resource}.index`, params), config);
+                setEventOverride(response.headers["x-socket-event"] ?? null);
+                const data = (() => {
+                    if (withExtra) {
+                        const {data, ...extra} = response.data;
+                        setExtra(extra);
+                        return data;
+                    }
+                    else {
+                        return response.data;
+                    }
+                })()
+                setState(await (id ? transformer(data) as T : Promise.all(data.map(transformer))));
+            }
+            else {
+                setEventOverride(null);
+                setState(id === undefined ? [] : null);
+            }
         }
-        else {
-            setEventOverride(null);
-            setState(id === undefined ? [] : null);
+        finally {
+            setLoading(false);
         }
-        setLoading(false);
     }, [axios, routeFunction, setState, resource, id, setEventOverride, setLoading, transformer, params, setError]);
 
     useEffect(() => {
