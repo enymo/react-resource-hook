@@ -11,8 +11,8 @@ export function requireNotNull<T>(value: T, message: string = "value must not be
     throw new TypeError(message);
 }
 
-export function filter<T extends object | null>(input: T): T {
-    return isNotNull(input) ? Object.fromEntries(Object.entries(input).filter(([,value]) => value !== undefined)) as T : null as T;
+export function filter<T extends object>(input: T): T {
+    return Object.fromEntries(Object.entries(input).filter(([,value]) => value !== undefined)) as T;
 }
 
 export const identity = (input: any) => input
