@@ -341,7 +341,10 @@ export default function useResource<T extends Resource, U extends object = T, V 
             handleUpdated(filter(await transformer((await promise!).data)));
         }
         else {
-            handleUpdated(update as DeepPartial<T>);
+            handleUpdated({ 
+                id,
+                ...update
+            } as DeepPartial<T>);
         }
     }, [state, axios, paramName, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
