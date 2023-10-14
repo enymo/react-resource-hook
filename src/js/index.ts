@@ -7,7 +7,7 @@ import { filter, identity, isNotNull, objectToFormData, pruneUnchanged, requireN
 
 type Handler<T, U> = (item: T, prev: U | null) => U | null;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
-type Param = string|number|boolean;
+type Param = string|number|boolean|null;
 export type Params = {[param: string]: Param|Param[]|Params}
 
 export interface Resource {
