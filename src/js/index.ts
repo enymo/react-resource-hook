@@ -322,21 +322,23 @@ export default function useResource<T extends Resource, U extends object = T, V 
 
     const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-        const route = routeFunction(`${resource}.update`, id === "single" ? params : {
-            [paramName!]: id,
-            ...params
-        });
         const body = filter(await inverseTransformer(pruneUnchangedProp ? pruneUnchanged(update, requireNotNull(isArray(state) ? state.find(item => item.id == id) : state, "update called before state ready"), reactNative) : update));
-        const promise = updateMethod !== "local-only" ? (useFormData ? axios.post<U>(route, objectToFormData({
-            ...body,
-            _method: "put"
-        }, reactNative), {
-            ...config,
-            headers: {
-                ...config?.headers,
-                "content-type": "multipart/form-data"
-            }
-        }) : axios.put<U>(route, body, config)) : null;
+        const promise = updateMethod !== "local-only" ? (() => {
+            const route = routeFunction(`${resource}.update`, id === "single" ? params : {
+                [paramName!]: id,
+                ...params
+            });
+            return useFormData ? axios.post<U>(route, objectToFormData({
+                ...body,
+                _method: "put"
+            }, reactNative), {
+                ...config,
+                headers: {
+                    ...config?.headers,
+                    "content-type": "multipart/form-data"
+                }
+            }) : axios.put<U>(route, body, config)
+        })() : null;
         if (updateMethod === "on-success") {
             handleUpdated(filter(await transformer((await promise!).data)));
         }
