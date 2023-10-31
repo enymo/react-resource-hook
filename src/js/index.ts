@@ -5,9 +5,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { DeepPartial } from "ts-essentials";
 import { filter, identity, isNotNull, objectToFormData, pruneUnchanged, requireNotNull } from "./util";
 
-type Handler<T, U> = (item: T, prev: U | null) => U | null;
 type UpdateMethod = "on-success" | "immediate" | "local-only";
-type Param = string|number|boolean|null;
+type Param = string|number|boolean;
 export type Params = {[param: string]: Param|Param[]|Params}
 
 export interface Resource {
@@ -57,10 +56,20 @@ interface OptionsCommon<T extends Resource, U> {
      * The inverse of the transformer, serializing data for sending to the api. See transformer for details.
      * @param item A single item to be serialized for the api
      */
-    inverseTransformer?(item: DeepPartial<U>): any | Promise<any>
+    inverseTransformer?(item: DeepPartial<U>): any | Promise<any>,
+    /**
+     * Called every time an item is updated for the current resource (either using the 'update' method or by receiving the respective socket event)
+     * @param item The (partial) item that has been updated (already transformed)
+     * @returns False if the event should be ignored
+     */
+    onUpdated?(item: DeepPartial<T>): boolean,
+    /**
+     * Called every time an item is destroyed for the current resource (either using the 'destroy' method or by receiving the respective socket event)
+     * @param id The id of the item that has been destroyed
+     * @returns True, if the item should actually be destroyed, false if the event should be ignored
+     */
+    onDestroyed?(id: T["id"]): boolean
 }
-
-type OnDestroyedList<T extends Resource> = (id: T["id"], prev: T[]) => T[]
 
 interface OptionsList<T extends Resource, U> extends OptionsCommon<T, U> {
     /**
@@ -70,61 +79,25 @@ interface OptionsList<T extends Resource, U> extends OptionsCommon<T, U> {
     withExtra?: boolean,
     /**
      * Called every time a new item is created for the current resource (either using the 'store' method or by receiving the respective socket event)
-     * If its omitted or returns null, the created item will simply be appended to the current state, but the method may also return the new state to override this behavior
      * @param item The item that has been created (already transformed)
-     * @param prev The previous state
-     * @returns The new state or null if default behavior should be used
+     * @returns False if the event should be ignored
      */
-    onCreated?: Handler<T, T[]>,
-    /**
-     * Called every time an item is updated for the current resource (either using the 'update' method or by receiving the respective socket event)
-     * If its omitted or returns null, an item in the current state with the same id or ephermeral state will be updated with the new values (if it exists),
-     * but the method may also return the new state to override this behavior
-     * @param item The (partial) item that has been updated (already transformed)
-     * @param prev The previous state
-     * @returns The new state or null if default behavior should be used
-     */
-    onUpdated?: Handler<DeepPartial<T>, T[]>,
-    /**
-     * Called every time an item is destroyed for the current resource (either using the 'destroy' method or by receiving the respective socket event)
-     * If its ommited or returns null, an item in the current state with the same id is removed (if it exists),
-     * but the method may also return the new state to override this behavior
-     * @param id The id of the item that has been destroyed
-     * @param prev The previous state
-     * @returns The new state or null if default behavior should be used
-     */
-    onDestroyed?: OnDestroyedList<T>
+    onCreated?(item: T): boolean,
+    sorter?(a: T, b: T): 1 | 0 | -1
 }
-
-type OnDestroyedSingle<T extends Resource> = (item: T["id"]) => void;
 
 interface OptionsSingle<T extends Resource, U> extends OptionsCommon<T, U> {
     /**
      * The id of the resource to be requested or 'single' if it is a [singleton resource]{@link https://www.google.de}
      */
     id: T["id"] | "single" | null,
-    /**
-     * Called whenever the current item is updated.
-     * If its omitted or returns null, the item will simply be updated using the new values,
-     * but the method may also return the new state to override this behavior
-     * @param item The (partial) updated item
-     * @param prev The previous state
-     * @returns The new state or null if default behavior should be used
-     */
-    onUpdated?: Handler<DeepPartial<T>, T>,
-    /**
-     * Called whenever the current item is destroyed.
-     * @param id The id of the destroyed item
-     */
-    onDestroyed?: OnDestroyedSingle<T>
 }
 
 interface OptionsImplementation<T extends Resource, U> extends OptionsCommon<T, U> {
     id?: T["id"] | "single",
     withExtra?: boolean,
-    onCreated?: Handler<T, T | T[]>,
-    onUpdated?: Handler<DeepPartial<T>, T | T[]>,
-    onDestroyed?: OnDestroyedSingle<T> | OnDestroyedList<T>
+    onCreated?: OptionsList<T, U>["onCreated"],
+    sorter?: OptionsList<T, U>["sorter"]
 }
 
 interface ReturnCommon<T extends Resource, U> {
@@ -138,7 +111,7 @@ interface ReturnCommon<T extends Resource, U> {
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns The created resource.
      */
-    store: (item?: DeepPartial<U>, config?: AxiosRequestConfig) => Promise<T>,
+    store: (item?: DeepPartial<U>, updaetMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<T | null>,
     /**
      * Fully refreshed the resource by sending the initial get request again.
      * @param config An axios request config to be used to the request
@@ -256,10 +229,16 @@ export default function useResource<T extends Resource, U extends object = T, V 
     inverseTransformer = identity,
     onCreated,
     onUpdated,
-    onDestroyed
+    onDestroyed,
+    sorter
 }: OptionsImplementation<T, U> = {}): [T[] | T | null, ReturnList<T, U, V> | ReturnSingle<T, U>] {
+    const isArray = useCallback((input: T | T[] | null): input is T[] => {
+        return id === undefined;
+    }, [id]);
+
     const {axios, routeFunction, reactNative = false} = requireNotNull(useContext(Context));
     const [state, setState] = useState<T[] | T | null>(id === undefined ? [] : null);
+    const sortedState = useMemo(() => (!isArray(state) || !sorter) ? state : state.toSorted(sorter), [state, sorter, isArray]);
     const [extra, setExtra] = useState<V | null>(null);
     const [error, setError] = useState<AxiosError | null>(null);
     const [loading, setLoading] = useState(autoRefresh);
@@ -278,75 +257,82 @@ export default function useResource<T extends Resource, U extends object = T, V 
     ]);
     const paramName = useMemo(() => paramNameOverride ?? (resource && pluralize.singular(requireNotNull(resource.split(".").pop())).replace(/-/g, "_")), [paramNameOverride, resource]);
 
-    const isArray = useCallback((input: T | T[] | null): input is T[] => {
-        return id === undefined;
-    }, [id]);
-
-    const handle = useCallback(<U = T>(handler: Handler<U, T | T[]> | undefined, defaultHandler: Handler<U, T | T[]>) => (item: U) => {
-        setState(prev => handler?.(item, prev) ?? defaultHandler(item, prev));
-    }, [transformer, setState]);
-
-    const handleCreated = useMemo(() => handle(onCreated, (item, prev) => (isNotNull(prev) && (prev as T[]).find(s => s.id == item.id)) ? prev : [...prev as T[], item]), [handle, onCreated]);
-    const handleUpdated = useMemo(() => handle<DeepPartial<T>>(onUpdated, (item, prev) => isArray(prev) ? (prev.map(s => s.id == item.id ? Object.assign(s, item) : s)) : {...prev, ...item} as T), [handle, onUpdated]);
+    const handleCreated = useCallback((item: T) => {
+        if (onCreated?.(item) ?? true) {
+            setState(prev => (isNotNull(prev) && (prev as T[]).find(s => s.id == item.id)) ? prev : [...prev as T[], item]);
+        }
+    }, [onCreated, setState]);
+    const handleUpdated = useCallback((item: DeepPartial<T>) => {
+        if (onUpdated?.(item) ?? true) {
+            setState(prev => isArray(prev) ? (prev.map(s => s.id == item.id ? Object.assign(s, item) : s)) : {...prev, ...item} as T)
+        }
+    }, [onUpdated, setState]);
     const handleDestroyed = useCallback((delId: T["id"]) => {
-        if (id !== undefined) {
-            (onDestroyed as OnDestroyedSingle<T>)?.(delId);
-            setState(null);
+        if (onDestroyed?.(delId) ?? true) {
+            if (id !== undefined) {
+                setState(null);
+            }
+            else {
+                setState(prev => (prev as T[]).filter(s => s.id !== id));
+            }
         }
-        else {
-            setState(prev => (onDestroyed?.(delId, prev as T[]) ?? ((id, prev) => (prev as T[]).filter(s => s.id !== id))(delId, prev)) as T[]);
-        }
+        
     }, [onDestroyed, setState, id]);
 
     useSocket<Resource>((id === undefined && event) ? `${event}.created` : null, async item => !loading && handleCreated(filter(await transformer(item) as T)), [loading, handleCreated]);
     useSocket<Resource>(event && `${event}.updated`, async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(filter(await transformer(item))), [id, state, loading, handleUpdated]);
     useSocket<number|string>(event && `${event}.destroyed`, delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId), [id, state, loading, handleDestroyed]);
 
-    const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, config?: AxiosRequestConfig) => {
+    const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod,  config?: AxiosRequestConfig) => {
+        const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
         const body = await inverseTransformer(item);
-        const promise = axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
+        const promise = updateMethod !== "local-only" ? axios.post(routeFunction(`${resource}.store`, params), useFormData ? objectToFormData(body, reactNative) : body, useFormData ? {
             ...config,
             headers: {
                 ...config?.headers,
                 "content-type": "multipart/form-data"
             },
-        } : config);
-        const response = await promise!;
-        const result = await transformer(response.data) as T;
-        if (id === undefined) {
-            handleCreated(result);
+        } : config) : null;
+        if (updateMethod === "on-success" || id !== undefined) {
+            const result = await transformer((await promise!).data) as T;
+            if (id === undefined) {
+                handleCreated(result);
+            }
+            return result;
         }
-        return result;
-
+        else {
+            handleCreated(item as T);
+            if (updateMethod !== "local-only") {
+                const result = await transformer((await promise!).data) as T;
+                setState(prev => (prev as T[]).map(i => i === item ? result : i));
+                return result;
+            }
+            return null;
+        }
     }, [axios, resource, params, routeFunction, transformer, inverseTransformer]);
 
     const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
         const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
+        const route = routeFunction(`${resource}.update`, id === "single" ? params : {
+            [paramName!]: id,
+            ...params
+        });
         const body = filter(await inverseTransformer(pruneUnchangedProp ? pruneUnchanged(update, requireNotNull(isArray(state) ? state.find(item => item.id == id) : state, "update called before state ready"), reactNative) : update));
-        const promise = updateMethod !== "local-only" ? (() => {
-            const route = routeFunction(`${resource}.update`, id === "single" ? params : {
-                [paramName!]: id,
-                ...params
-            });
-            return useFormData ? axios.post<U>(route, objectToFormData({
-                ...body,
-                _method: "put"
-            }, reactNative), {
-                ...config,
-                headers: {
-                    ...config?.headers,
-                    "content-type": "multipart/form-data"
-                }
-            }) : axios.put<U>(route, body, config)
-        })() : null;
+        const promise = updateMethod !== "local-only" ? (useFormData ? axios.post<U>(route, objectToFormData({
+            ...body,
+            _method: "put"
+        }, reactNative), {
+            ...config,
+            headers: {
+                ...config?.headers,
+                "content-type": "multipart/form-data"
+            }
+        }) : axios.put<U>(route, body, config)) : null;
         if (updateMethod === "on-success") {
             handleUpdated(filter(await transformer((await promise!).data)));
         }
         else {
-            handleUpdated({ 
-                id,
-                ...update
-            } as DeepPartial<T>);
+            handleUpdated(update as DeepPartial<T>);
         }
     }, [state, axios, paramName, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
@@ -413,5 +399,5 @@ export default function useResource<T extends Resource, U extends object = T, V 
         }
     }, [refresh, autoRefresh, setError]);
 
-    return [state, id ? {loading, store, refresh, update: updateSingle, destroy: destroySingle, error} : {loading, store, update: updateList, destroy: destroyList, refresh, extra, error}]
+    return [sortedState, id ? {loading, store, refresh, update: updateSingle, destroy: destroySingle, error} : {loading, store, update: updateList, destroy: destroyList, refresh, extra, error}]
 }
