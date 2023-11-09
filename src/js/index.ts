@@ -238,7 +238,7 @@ export default function useResource<T extends Resource, U extends object = T, V 
 
     const {axios, routeFunction, reactNative = false} = requireNotNull(useContext(Context));
     const [state, setState] = useState<T[] | T | null>(id === undefined ? [] : null);
-    const sortedState = useMemo(() => (!isArray(state) || !sorter) ? state : state.toSorted(sorter), [state, sorter, isArray]);
+    const sortedState = useMemo(() => (!isArray(state) || !sorter) ? state : [...state].sort(sorter), [state, sorter, isArray]);
     const [extra, setExtra] = useState<V | null>(null);
     const [error, setError] = useState<AxiosError | null>(null);
     const [loading, setLoading] = useState(autoRefresh);
