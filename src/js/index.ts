@@ -108,10 +108,17 @@ interface ReturnCommon<T extends Resource, U> {
     /**
      * Stores a new item in the current resource
      * @param item The item to be stored
+     * @param updateMethod The update method to be used
+     *  'on-success' will only create the resource in the frontend once the backend returns a successful response.
+     *      The frontend will be created using the data from the backends response (which might be different from the data sent in the request)
+     *  'immediate' will create the resource in the frontend immediately while also sending the request to the backend. The frontend will first be created using
+     *      the data provided in the request, but after the request succeeds, the item will be updated using the data from the backends response.
+     *      The promise will only resolve once the second update is complete.
+     *  'local-only' will only create the frontend with the values provided, without sending any request to the backend
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns The created resource.
      */
-    store: (item?: DeepPartial<U>, updaetMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<T | null>,
+    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<T | null>,
     /**
      * Fully refreshed the resource by sending the initial get request again.
      * @param config An axios request config to be used to the request
@@ -132,8 +139,9 @@ export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U>
      * @param updateMethod The update method to be used
      *  'on-success' will only update the resource in the frontend once the backend returns a successful response.
      *      The frontend will be updated using the data from the backends response (which might be different from the data sent in the request)
-     *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will be updated using
-     *      only the data provided in the request, but a subsequent 'updated' event (socket only) may update the item again once the requests succeeeds
+     *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will first be updated using
+     *      the data provided in the request, but after the request succeeds, the item will be updated again using the data from the backends response.
+     *      The promise will only resolve once the second update is complete.
      *  'local-only' will only update the frontend with the values provided, without sending any request to the backend
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
@@ -144,7 +152,7 @@ export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U>
      * @param id The id of the item to destroy
      * @param updateMethod The update method to be used
      *  'on-success' will only remove the item in the frontend once the backend returns a successful response.
-     *  'immediate' will update the frontend immedately while also sending the request to the backend
+     *  'immediate' will update the frontend immedately while also sending the request to the backend. The promise will only resolve once the request succeeds.
      *  'local-only' will only remove the item in the frontend
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
@@ -164,8 +172,9 @@ export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T,
      * @param updateMethod The update method to be used
      *  'on-success' will only update the resource in the frontend once the backend returns a successful response.
      *      The frontend will be updated using the data from the backends response (which might be different from the data sent in the request)
-     *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will be updated using
-     *      only the data provided in the request, but a subsequent 'updated' event (socket only) may update the item again once the requests succeeeds
+     *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will first be updated using
+     *      the data provided in the request, but after the request succeeds, the item will be updated again using the data from the backends response.
+     *      The promise will only resolve once the second update is complete.
      *  'local-only' will only update the frontend with the values provided, without sending any request to the backend
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
@@ -175,7 +184,7 @@ export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T,
      * Destroys the current item
      * @param updateMethod The update method to be used
      *  'on-success' will only remove the item in the frontend once the backend returns a successful response.
-     *  'immediate' will update the frontend immedately while also sending the request to the backend
+     *  'immediate' will update the frontend immedately while also sending the request to the backend. The promise will only resolve once the request succeeds.
      *  'local-only' will only remove the item in the frontend
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
@@ -332,7 +341,11 @@ export default function useResource<T extends Resource, U extends object = T, V 
             handleUpdated(filter(await transformer((await promise!).data)));
         }
         else {
-            handleUpdated(update as DeepPartial<T>);
+            handleUpdated(update as DeepPartial<T>);   
+            if (updateMethod !== "local-only") {
+                const result = filter(await transformer((await promise!).data)) as T;
+                setState(prev => isArray(prev) ? (prev.map(s => s.id == id ? Object.assign(s, result) : s)) : {...prev, ...result} as T);
+            }
         }
     }, [state, axios, paramName, resource, params, routeFunction, inverseTransformer, transformer, defaultUpdateMethod]);
 
@@ -346,10 +359,17 @@ export default function useResource<T extends Resource, U extends object = T, V 
             [paramName!]: id,
             ...params
         }), config);
-        if (updateMethod !== "immediate") {
+        if (updateMethod === "on-success") {
             await promise;
+            handleDestroyed(id);
         }
-        handleDestroyed(id);
+        else {
+            handleDestroyed(id);
+            if (updateMethod !== "local-only") {
+                await promise;
+            }
+
+        }
     }, [axios, resource, params, routeFunction]);
 
     const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
