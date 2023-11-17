@@ -190,7 +190,7 @@ export default function createResource<T extends Resource, U extends object = T,
     withExtra?: boolean,
     transformer?(item: any): DeepPartial<T> | Promise<DeepPartial<T>>,
     inverseTransformer?(item: DeepPartial<U>): any | Promise<any>
-}) {
+} = {}) {
     const ResourceContext = createContext<{
         state: T[],
         actions: ReturnList<T, U, V>,
