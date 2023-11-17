@@ -62,6 +62,10 @@ interface OptionsCommon<T extends Resource, U> {
      * @param id The id of the item that has been destroyed
      */
     onDestroyed?: OnDestroyedListener<T>,
+    /**
+     * Whether to automatically refresh the resource when the configuration of the hook changes.
+     */
+    autoRefresh?: boolean,
     ignoreContext?: boolean
 }
 
@@ -175,7 +179,6 @@ export default function createResource<T extends Resource, U extends object = T,
     socketEvent: eventOverrideConfig,
     defaultUpdateMethod = "on-success",
     useFormData = false,
-    autoRefresh = true,
     withExtra = false,
     pruneUnchanged: pruneUnchangedOverride = false,
     transformer = identity,
@@ -185,7 +188,6 @@ export default function createResource<T extends Resource, U extends object = T,
     socketEvent?: string,
     defaultUpdateMethod?: UpdateMethod,
     useFormData?: boolean,
-    autoRefresh?: boolean,
     pruneUnchanged?: boolean,
     withExtra?: boolean,
     transformer?(item: any): DeepPartial<T> | Promise<DeepPartial<T>>,
@@ -209,6 +211,7 @@ export default function createResource<T extends Resource, U extends object = T,
         onCreated,
         onUpdated,
         onDestroyed,
+        autoRefresh,
         ignoreContext = false
     }: OptionsImplementation<T, U> = {}) => {
         const isArray = useCallback((input: T | T[] | null): input is T[] => {
