@@ -170,8 +170,7 @@ export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T,
     destroy: (updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
 }
 
-export default function createResource<T extends Resource, U extends object = T, V = null>({
-    resource,
+export default function createResource<T extends Resource, U extends object = T, V = null>(resource: string, {
     paramName: paramNameOverride,
     socketEvent: eventOverrideConfig,
     defaultUpdateMethod = "on-success",
@@ -182,7 +181,6 @@ export default function createResource<T extends Resource, U extends object = T,
     transformer = identity,
     inverseTransformer = identity
 }: {
-    resource: string,
     paramName?: string,
     socketEvent?: string,
     defaultUpdateMethod?: UpdateMethod,
