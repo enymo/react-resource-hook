@@ -211,7 +211,7 @@ export default function createResource<T extends Resource, U extends object = T,
         onCreated,
         onUpdated,
         onDestroyed,
-        autoRefresh,
+        autoRefresh = true,
         ignoreContext = false
     }: OptionsImplementation<T, U> = {}) => {
         const isArray = useCallback((input: T | T[] | null): input is T[] => {
