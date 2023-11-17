@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "tsup": {
     "entry": [
-      "src/js/index.ts"
+      "src/js/index.tsx"
     ],
     "format": [
       "esm",
