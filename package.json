@@ -41,6 +41,8 @@
     "react": ">=17.0.0"
   },
   "dependencies": {
+    "@enymo/react-better-context": "^1.0.1",
+    "@enymo/ts-nullsafe": "^1.0.0",
     "pluralize": "^8.0.0"
   }
 }

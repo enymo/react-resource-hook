@@ -1,16 +1,5 @@
 import { DeepPartial } from "ts-essentials";
 
-export function isNotNull<T>(value: T): value is NonNullable<T> {
-    return value !== undefined && value !== null;
-}
-
-export function requireNotNull<T>(value: T, message: string = "value must not be null"): NonNullable<T> {
-    if (isNotNull(value)) {
-        return value;
-    }
-    throw new TypeError(message);
-}
-
 export function filter<T extends object>(input: T): T {
     return Object.fromEntries(Object.entries(input).filter(([,value]) => value !== undefined)) as T;
 }
@@ -19,17 +8,49 @@ export const identity = (input: any) => input
 
 function isAtomic(input: any, reactNative: boolean) {
     return (
-        input instanceof File
+        isFile(input, reactNative)
         || input === null
         || typeof input !== "object"
+    )
+}
+
+function isFile(input: any, reactNative: boolean) {
+    return (
+        input instanceof File
         || (reactNative && "uri" in input && "name" in input && "type" in input)
     )
 }
 
+export function objectNeedsFormDataConversion(input: any, reactNative: boolean): boolean {
+    if (isAtomic(input, reactNative)) {
+        return isFile(input, reactNative);
+    }
+    else {
+        for (const value of Array.isArray(input) ? input : Object.values(input)) {
+            if (objectNeedsFormDataConversion(value, reactNative)) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
 function objectToFormDataRecursive(input: any, reactNative: boolean, fd: FormData, path: string) {
     if (isAtomic(input, reactNative)) {
-        if (input !== undefined) {
-            fd.append(path, input);
+        switch (input) {
+            case undefined:
+                break;
+            case null:
+                fd.append(path, "");
+                break;
+            case true:
+                fd.append(path, "1");
+                break;
+            case false:
+                fd.append(path, "0");
+                break;
+            default:
+                fd.append(path, input);
         }
     }
     else {
