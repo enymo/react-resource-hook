@@ -102,7 +102,7 @@ interface ReturnCommon<T extends Resource, U> {
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns The created resource.
      */
-    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<Segmented<T> | null>,
+    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<Segmented<T | null>>,
     /**
      * Fully refreshed the resource by sending the initial get request again.
      * @param config An axios request config to be used to the request
@@ -313,7 +313,9 @@ export default function createResource<T extends Resource, U extends object = T,
                         })()
                     }
                 }
-                return null;
+                return {
+                    saved: Promise.resolve(null)
+                };
             }
         }, [axios, params, routeFunction]);
     
@@ -349,9 +351,9 @@ export default function createResource<T extends Resource, U extends object = T,
             else {
                 handleUpdated(update as DeepPartial<T>);
                 return {
-                    saved: (async () => {
+                    saved: promise ? (async () => {
                         handleUpdated(filter(await transformer((await promise!).data)));
-                    })()
+                    })() : Promise.resolve()
                 }
             }
         }, [state, axios, params, routeFunction]);
@@ -380,7 +382,7 @@ export default function createResource<T extends Resource, U extends object = T,
             else {
                 handleDestroyed(id);
                 return {
-                    saved: promise
+                    saved: promise || Promise.resolve()
                 }
             }
         }, [axios, params, routeFunction]);
