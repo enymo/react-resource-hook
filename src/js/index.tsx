@@ -43,9 +43,9 @@ type OnCreatedListener<T extends Resource> = (item: T) => void;
 type OnUpdatedListener<T extends Resource> = (item: DeepPartial<T>) => void;
 type OnDestroyedListener<T extends Resource> = (item: T["id"]) => void
 
-type Segmented<T, V = {}> = {
+export type Segmented<T, V = {}> = Promise<{
     saved: Promise<T>
-} & V
+} & V>
 
 interface OptionsCommon<T extends Resource, U> {
     /**
@@ -102,7 +102,7 @@ interface ReturnCommon<T extends Resource, U> {
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns The created resource.
      */
-    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<Segmented<T | null>>,
+    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<T | null>,
     /**
      * Fully refreshed the resource by sending the initial get request again.
      * @param config An axios request config to be used to the request
@@ -129,7 +129,7 @@ export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U>
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    update: (id: T["id"], update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<Segmented<void>>,
+    update: (id: T["id"], update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<void>,
     /**
      * Destroys an item for the current resource
      * @param id The id of the item to destroy
@@ -140,7 +140,7 @@ export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U>
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    destroy: (id: T["id"], updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<Segmented<void>>,
+    destroy: (id: T["id"], updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<void>,
     /**
      * Extra data returned from the initial get request. Requires 'withExtra' option to be set to 'true'. See documentation
      * for this option for the expected response format
@@ -161,7 +161,7 @@ export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T,
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    update: (update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    update: (update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<void>,
     /**
      * Destroys the current item
      * @param updateMethod The update method to be used
@@ -171,7 +171,7 @@ export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T,
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    destroy: (updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
+    destroy: (updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<void>
 }
 
 export default function createResource<T extends Resource, U extends object = T, V = null>(resource: string, {
