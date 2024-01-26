@@ -269,7 +269,7 @@ export default function createResource<T extends Resource, U extends object = T,
                     setState(null);
                 }
                 else {
-                    setState(prev => (prev as T[]).filter(s => s.id !== id));
+                    setState(prev => (prev as T[]).filter(s => s.id !== delId));
                 }
             }
             
