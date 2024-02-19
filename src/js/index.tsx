@@ -233,7 +233,7 @@ export default function createResource<T extends Resource, U extends object = T,
             else {
                 return localState;
             }
-        }, [ignoreContext, resourceContext, localState]);
+        }, [ignoreContext, resourceContext?.state, localState]);
         const sortedState = useMemo(() => (!isArray(state) || !sorter) ? state : [...state].sort(sorter), [state, sorter, isArray]);
         const [extra, setExtra] = useState<V | null>(null);
         const [error, setError] = useState<AxiosError | null>(null);
