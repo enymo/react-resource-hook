@@ -237,7 +237,7 @@ export default function createResource<T extends Resource, U extends object = T,
         const sortedState = useMemo(() => (!isArray(state) || !sorter) ? state : [...state].sort(sorter), [state, sorter, isArray]);
         const [extra, setExtra] = useState<V | null>(null);
         const [error, setError] = useState<AxiosError | null>(null);
-        const [localLoading, setLoading] = useState(autoRefresh);
+        const [loading, setLoading] = useState(autoRefresh);
         const [eventOverride, setEventOverride] = useState<string | null>(null);
         
         const socketClient = useSocketClient();
@@ -275,9 +275,9 @@ export default function createResource<T extends Resource, U extends object = T,
             
         }, [onDestroyed, setState, id]);
     
-        useSocket<Resource>(((ignoreContext || !isNotNull(resourceContext)) && id === undefined && event) ? `${event}.created` : null, async item => !localLoading && handleCreated(filter(await transformer(item) as T)), [localLoading, handleCreated]);
-        useSocket<Resource>((ignoreContext || !isNotNull(resourceContext)) && event ? `${event}.updated` : null, async item => (!localLoading && (id === undefined || item.id === (state as T).id)) && handleUpdated(filter(await transformer(item))), [id, state, localLoading, handleUpdated]);
-        useSocket<number|string>((ignoreContext || !isNotNull(resourceContext)) && event ? `${event}.destroyed` : null, delId => !localLoading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId), [id, state, localLoading, handleDestroyed]);
+        useSocket<Resource>(((ignoreContext || !isNotNull(resourceContext)) && id === undefined && event) ? `${event}.created` : null, async item => !loading && handleCreated(filter(await transformer(item) as T)), [loading, handleCreated]);
+        useSocket<Resource>((ignoreContext || !isNotNull(resourceContext)) && event ? `${event}.updated` : null, async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(filter(await transformer(item))), [id, state, loading, handleUpdated]);
+        useSocket<number|string>((ignoreContext || !isNotNull(resourceContext)) && event ? `${event}.destroyed` : null, delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId), [id, state, loading, handleDestroyed]);
     
         const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod,  config?: AxiosRequestConfig) => {
             const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
@@ -445,7 +445,7 @@ export default function createResource<T extends Resource, U extends object = T,
             }
         }, [onDestroyed, ignoreContext, resourceContext]);
     
-        return [sortedState, (!ignoreContext && isNotNull(resourceContext)) ? resourceContext.actions : (id ? {loading: localLoading, store, refresh, update: updateSingle, destroy: destroySingle, error} : {loading: localLoading, store, update: updateList, destroy: destroyList, refresh, extra, error})]
+        return [sortedState, (!ignoreContext && isNotNull(resourceContext)) ? resourceContext.actions : (id ? {loading: loading, store, refresh, update: updateSingle, destroy: destroySingle, error} : {loading: loading, store, update: updateList, destroy: destroyList, refresh, extra, error})]
     }) as {
         (options?: OptionsList<T, U>): [T[], ReturnList<T, U, V>],
         (options: OptionsSingle<T, U>): [T | null, ReturnSingle<T, U>]
