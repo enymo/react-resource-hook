@@ -421,6 +421,9 @@ export default function createResource<T extends Resource, U extends object = T,
                     setLoading(false);
                 }
             }
+            else {
+                setLoading(false);
+            }
         }, [axios, routeFunction, setState, id, setEventOverride, setLoading, params, setError, ignoreContext, resourceContext]);
     
         useEffect(() => {
