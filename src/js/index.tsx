@@ -341,7 +341,10 @@ export default function createResource<T extends Resource, U extends object = T,
                 }
             }
             else {
-                handleUpdated(update as DeepPartial<T>);
+                handleUpdated({
+                    id,
+                    ...update
+                } as DeepPartial<T>);
                 return {
                     saved: promise ? (async () => {
                         handleUpdated(filter(await transformer((await promise!).data)));
