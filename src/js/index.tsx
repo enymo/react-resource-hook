@@ -279,7 +279,7 @@ export default function createResource<T extends Resource, U extends object = T,
         useSocket<Resource>((ignoreContext || !isNotNull(resourceContext)) && event ? `${event}.updated` : null, async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(filter(await transformer(item))), [id, state, loading, handleUpdated]);
         useSocket<number|string>((ignoreContext || !isNotNull(resourceContext)) && event ? `${event}.destroyed` : null, delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId), [id, state, loading, handleDestroyed]);
     
-        const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod,  config?: AxiosRequestConfig) => {
+        const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod,  config?: AxiosRequestConfig) => {            
             const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
             const body = await inverseTransformer(item);
             const promise = updateMethod !== "local-only" ? axios.post(routeFunction(`${resource}.store`, params), (useFormData || objectNeedsFormDataConversion(body, reactNative)) ? objectToFormData(body, reactNative) : body, useFormData ? {
@@ -316,6 +316,10 @@ export default function createResource<T extends Resource, U extends object = T,
         }, [axios, params, routeFunction]);
     
         const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+            if (!ignoreContext && isNotNull(resourceContext)) {
+                return resourceContext.actions.update(id, update, updateMethodOverride, config);
+            }
+            
             const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
             const body = filter(await inverseTransformer(pruneUnchangedOverride ? pruneUnchanged(update, requireNotNull(isArray(state) ? state.find(item => item.id == id) : state, "update called before state ready"), reactNative) : update));
             const promise = updateMethod !== "local-only" ? (() => {
@@ -351,13 +355,17 @@ export default function createResource<T extends Resource, U extends object = T,
                     })() : Promise.resolve()
                 }
             }
-        }, [state, axios, params, routeFunction]);
+        }, [state, axios, params, routeFunction, resourceContext, ignoreContext]);
     
         const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
             return updateList(requireNotNull(id), update, updateMethodOverride, config);
         }, [id, updateList]);
     
         const destroyList = useCallback(async (id: T["id"] | "single", updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+            if (!ignoreContext && isNotNull(resourceContext)) {
+                return resourceContext.actions.destroy(id, updateMethodOverride, config);
+            }
+
             const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
             const promise = updateMethod !== "local-only" && axios.delete(routeFunction(`${resource}.destroy`, id === "single" ? params : {
                 [paramName!]: id,
@@ -376,7 +384,7 @@ export default function createResource<T extends Resource, U extends object = T,
                     saved: promise || Promise.resolve()
                 }
             }
-        }, [axios, params, routeFunction]);
+        }, [axios, params, routeFunction, resourceContext, ignoreContext]);
     
         const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
     
@@ -448,7 +456,15 @@ export default function createResource<T extends Resource, U extends object = T,
             }
         }, [onDestroyed, ignoreContext, resourceContext]);
     
-        return [sortedState, (!ignoreContext && isNotNull(resourceContext)) ? resourceContext.actions : (id ? {loading: loading, store, refresh, update: updateSingle, destroy: destroySingle, error} : {loading: loading, store, update: updateList, destroy: destroyList, refresh, extra, error})]
+        return [
+            sortedState, 
+            {
+                ...(!ignoreContext && isNotNull(resourceContext) 
+                    ? {loading: resourceContext.actions.loading, refresh: resourceContext.actions.refresh, error: resourceContext.actions.error, store: resourceContext.actions.store} 
+                    : {loading, refresh, error, store}), 
+                ...(id !== undefined ? {update: updateSingle, destroy: destroySingle} : {update: updateList, destroy: destroyList})
+            }
+        ];
     }) as {
         (options?: OptionsList<T, U>): [T[], ReturnList<T, U, V>],
         (options: OptionsSingle<T, U>): [T | null, ReturnSingle<T, U>]
