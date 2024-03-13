@@ -459,10 +459,15 @@ export default function createResource<T extends Resource, U extends object = T,
         return [
             sortedState, 
             {
-                ...(!ignoreContext && isNotNull(resourceContext) 
-                    ? {loading: resourceContext.actions.loading, refresh: resourceContext.actions.refresh, error: resourceContext.actions.error, store: resourceContext.actions.store} 
-                    : {loading, refresh, error, store}), 
-                ...(id !== undefined ? {update: updateSingle, destroy: destroySingle} : {update: updateList, destroy: destroyList})
+                ...(!ignoreContext && isNotNull(resourceContext) ? {
+                    loading: resourceContext.actions.loading,
+                    refresh: resourceContext.actions.refresh,
+                    error: resourceContext.actions.error,
+                    store: resourceContext.actions.store
+                } : {loading, refresh, error, store}), 
+                ...(id !== undefined 
+                    ? {update: updateSingle, destroy: destroySingle} 
+                    : {update: updateList, destroy: destroyList})
             }
         ];
     }) as {
