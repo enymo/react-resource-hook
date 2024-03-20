@@ -242,7 +242,7 @@ export default function createResource<T extends Resource, U extends object = T,
         
         const socketClient = useSocketClient();
         const event = useMemo(() => socketClient && (eventOverrideConfig ?? eventOverride ?? resource?.split(".").map(part => {
-            const singular = pluralize.singular(part);
+            const singular = pluralize.singular(part).replaceAll("-", "_");
             return (params && singular in params) ? `${part}.${params[singular]}` : part;
         }).join(".") ?? null), [
             params,
@@ -463,8 +463,9 @@ export default function createResource<T extends Resource, U extends object = T,
                     loading: resourceContext.actions.loading,
                     refresh: resourceContext.actions.refresh,
                     error: resourceContext.actions.error,
+                    extra: resourceContext.actions.extra,
                     store: resourceContext.actions.store
-                } : {loading, refresh, error, store}), 
+                } : {loading, refresh, error, extra, store}), 
                 ...(id !== undefined 
                     ? {update: updateSingle, destroy: destroySingle} 
                     : {update: updateList, destroy: destroyList})
