@@ -260,7 +260,10 @@ export default function createResource<T extends Resource, U extends object = T,
         }, [onCreated, setState]);
         const handleUpdated = useCallback((item: DeepPartial<T>) => {
             if (onUpdated?.(item) ?? true) {
-                setState(prev => isArray(prev) ? (prev.map(s => s.id == item.id ? Object.assign(s, item) : s)) : {...prev, ...item} as T)
+                setState(prev => isArray(prev) ? (prev.map(s => s.id == item.id ? {
+                    ...s,
+                    ...item
+                } : s)) : {...prev, ...item} as T)
             }
         }, [onUpdated, setState]);
         const handleDestroyed = useCallback((delId: T["id"]) => {
