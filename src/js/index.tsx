@@ -43,10 +43,6 @@ type OnCreatedListener<T extends Resource> = (item: T) => void;
 type OnUpdatedListener<T extends Resource> = (item: DeepPartial<T>) => void;
 type OnDestroyedListener<T extends Resource> = (item: T["id"]) => void
 
-export type Segmented<T, V = {}> = Promise<{
-    saved: Promise<T>
-} & V>
-
 interface OptionsCommon<T extends Resource, U> {
     /**
      * Additional parameters to be passed to the resource. Can be additional path parameters or query parameters
@@ -102,7 +98,7 @@ interface ReturnCommon<T extends Resource, U> {
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns The created resource.
      */
-    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<T | null>,
+    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<T>,
     /**
      * Fully refreshed the resource by sending the initial get request again.
      * @param config An axios request config to be used to the request
@@ -129,7 +125,7 @@ export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U>
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    update: (id: T["id"], update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<void>,
+    update: (id: T["id"], update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     /**
      * Destroys an item for the current resource
      * @param id The id of the item to destroy
@@ -140,7 +136,7 @@ export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U>
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    destroy: (id: T["id"], updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<void>,
+    destroy: (id: T["id"], updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     /**
      * Extra data returned from the initial get request. Requires 'withExtra' option to be set to 'true'. See documentation
      * for this option for the expected response format
@@ -161,7 +157,7 @@ export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T,
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    update: (update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<void>,
+    update: (update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     /**
      * Destroys the current item
      * @param updateMethod The update method to be used
@@ -171,7 +167,7 @@ export interface ReturnSingle<T extends Resource, U = T> extends ReturnCommon<T,
      * @param config An AxiosRequestConfig may be passed to be used for the request
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    destroy: (updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Segmented<void>
+    destroy: (updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>
 }
 
 export default function createResource<T extends Resource, U extends object = T, V = null>(resource: string, {
@@ -284,14 +280,16 @@ export default function createResource<T extends Resource, U extends object = T,
     
         const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod,  config?: AxiosRequestConfig) => {            
             const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-            const body = await inverseTransformer(item);
-            const promise = updateMethod !== "local-only" ? axios.post(routeFunction(`${resource}.store`, params), (useFormData || objectNeedsFormDataConversion(body, reactNative)) ? objectToFormData(body, reactNative) : body, useFormData ? {
-                ...config,
-                headers: {
-                    ...config?.headers,
-                    "content-type": "multipart/form-data"
-                },
-            } : config) : null;
+            const promise = updateMethod !== "local-only" ? (async () => {
+                const body = await inverseTransformer(item);
+                return axios.post(routeFunction(`${resource}.store`, params), (useFormData || objectNeedsFormDataConversion(body, reactNative)) ? objectToFormData(body, reactNative) : body, useFormData ? {
+                    ...config,
+                    headers: {
+                        ...config?.headers,
+                        "content-type": "multipart/form-data"
+                    },
+                } : config)
+            })() : null;
             if (updateMethod === "on-success" || id !== undefined) {
                 const result = await transformer((await promise!).data) as T;
                 if (id === undefined) {
@@ -304,17 +302,11 @@ export default function createResource<T extends Resource, U extends object = T,
             else {
                 handleCreated(item as T);
                 if (updateMethod !== "local-only") {
-                    return {
-                        saved: (async () => {
-                            const result = await transformer((await promise!).data) as T;
-                            setState(prev => (prev as T[]).map(i => i === item ? result : i));
-                            return result;
-                        })()
-                    }
+                    const result = await transformer((await promise!).data) as T;
+                    setState(prev => (prev as T[]).map(i => i === item ? result : i));
+                    return result;
                 }
-                return {
-                    saved: Promise.resolve(null)
-                };
+                return item;
             }
         }, [axios, params, routeFunction]);
     
@@ -324,8 +316,8 @@ export default function createResource<T extends Resource, U extends object = T,
             }
             
             const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-            const body = filter(await inverseTransformer(pruneUnchangedOverride ? pruneUnchanged(update, requireNotNull(isArray(state) ? state.find(item => item.id == id) : state, "update called before state ready"), reactNative) : update));
-            const promise = updateMethod !== "local-only" ? (() => {
+            const promise = updateMethod !== "local-only" ? (async () => {
+                const body = filter(await inverseTransformer(pruneUnchangedOverride ? pruneUnchanged(update, requireNotNull(isArray(state) ? state.find(item => item.id == id) : state, "update called before state ready"), reactNative) : update));
                 const route = routeFunction(`${resource}.update`, id === "single" ? params : {
                     [paramName!]: id,
                     ...params
@@ -343,20 +335,13 @@ export default function createResource<T extends Resource, U extends object = T,
             })() : null;
             if (updateMethod === "on-success") {
                 handleUpdated(filter(await transformer((await promise!).data)));
-                return {
-                    saved: Promise.resolve()
-                }
             }
             else {
                 handleUpdated({
                     id,
                     ...update
                 } as DeepPartial<T>);
-                return {
-                    saved: promise ? (async () => {
-                        handleUpdated(filter(await transformer((await promise!).data)));
-                    })() : Promise.resolve()
-                }
+                handleUpdated(filter(await transformer((await promise!).data)));
             }
         }, [state, axios, params, routeFunction, resourceContext, ignoreContext]);
     
@@ -377,15 +362,10 @@ export default function createResource<T extends Resource, U extends object = T,
             if (updateMethod !== "immediate") {
                 await promise;
                 handleDestroyed(id);
-                return {
-                    saved: Promise.resolve()
-                }
             }
             else {
                 handleDestroyed(id);
-                return {
-                    saved: promise || Promise.resolve()
-                }
+                return promise;
             }
         }, [axios, params, routeFunction, resourceContext, ignoreContext]);
     
