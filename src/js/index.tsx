@@ -341,7 +341,9 @@ export default function createResource<T extends Resource, U extends object = T,
                     id,
                     ...update
                 } as DeepPartial<T>);
-                handleUpdated(filter(await transformer((await promise!).data)));
+                if (promise) {
+                    handleUpdated(filter(await transformer((await promise!).data)));
+                }
             }
         }, [state, axios, params, routeFunction, resourceContext, ignoreContext]);
     
