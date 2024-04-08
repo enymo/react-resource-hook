@@ -360,7 +360,7 @@ export default function createResource<T extends Resource, U extends object = T,
             const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
             const promise = updateMethod !== "local-only" ? (async () => {
                 const body = {
-                    update: (await Promise.all(update.map(async update => {
+                    _batch: (await Promise.all(update.map(async update => {
                         const pruned: DeepPartial<U> = pruneUnchangedOverride ? pruneUnchanged(update, requireNotNull((state as T[]).find(item => item.id == update.id), "update called before state ready"), reactNative, ["id"]) : update;
                         const keys = Object.keys(pruned);
                         return (keys.length === 1 && keys[0] === "id") ? [] : [filter(await inverseTransformer(pruned))];
