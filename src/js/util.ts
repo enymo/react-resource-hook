@@ -83,10 +83,10 @@ function isSubsetRecursive(a: any, b: any) {
     }
 }
 
-function pruneUnchangedRecursive(input: any, comparison: any, reactNative: boolean, target: any) {
+function pruneUnchangedRecursive(input: any, comparison: any, reactNative: boolean, target: any, ignoreKeys: string[] = []) {
     for (const [key, value] of Object.entries(input)) {
         if (isAtomic(value, reactNative) || Array.isArray(value)) {
-            if (!isSubsetRecursive(value, comparison[key])) {
+            if (ignoreKeys.includes(key) || !isSubsetRecursive(value, comparison[key])) {
                 target[key] = value;
             }
         }
@@ -97,17 +97,13 @@ function pruneUnchangedRecursive(input: any, comparison: any, reactNative: boole
     }
 }
 
-export function pruneUnchanged<T>(input: object, comparison: object, reactNative: boolean): DeepPartial<T> {
+export function pruneUnchanged<T>(input: object, comparison: object, reactNative: boolean, ignoreKeys: string[] = []): DeepPartial<T> {
     const target = {}
-    pruneUnchangedRecursive(input, comparison, reactNative, target);
+    pruneUnchangedRecursive(input, comparison, reactNative, target, ignoreKeys);
     return target as DeepPartial<T>;
 }
 
 export function randomString(length: number) {
     const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    let result = "";
-    for (let i = 0; i < length; i++) {
-        result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
+    return Array<void>(length).fill().map(() => chars[Math.floor(Math.random() * chars.length)]).join("");
 }

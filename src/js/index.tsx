@@ -126,6 +126,7 @@ export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U>
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
     update: (id: T["id"], update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
+    batchUpdate: (update: (DeepPartial<U> & {id: T["id"]})[], updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<void>,
     /**
      * Destroys an item for the current resource
      * @param id The id of the item to destroy
@@ -322,7 +323,7 @@ export default function createResource<T extends Resource, U extends object = T,
                     [paramName!]: id,
                     ...params
                 });
-                return (useFormData || objectNeedsFormDataConversion(body, reactNative)) ? axios.post<U>(route, objectToFormData({
+                return (useFormData || objectNeedsFormDataConversion(body, reactNative)) ? axios.post<T>(route, objectToFormData({
                     ...body,
                     _method: "put"
                 }, reactNative), {
@@ -331,7 +332,7 @@ export default function createResource<T extends Resource, U extends object = T,
                         ...config?.headers,
                         "content-type": "multipart/form-data"
                     }
-                }) : axios.put<U>(route, body, config)
+                }) : axios.put<T>(route, body, config)
             })() : null;
             if (updateMethod === "on-success") {
                 handleUpdated(filter(await transformer((await promise!).data)));
@@ -350,6 +351,45 @@ export default function createResource<T extends Resource, U extends object = T,
         const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
             return updateList(requireNotNull(id), update, updateMethodOverride, config);
         }, [id, updateList]);
+
+        const batchUpdate = useCallback(async (update: (DeepPartial<U> & {id: T["id"]})[], updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+            if (!ignoreContext && isNotNull(resourceContext)) {
+                return resourceContext.actions.batchUpdate(update, updateMethodOverride, config);
+            }
+            
+            const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
+            const promise = updateMethod !== "local-only" ? (async () => {
+                const body = {
+                    update: (await Promise.all(update.map(async update => {
+                        const pruned: DeepPartial<U> = pruneUnchangedOverride ? pruneUnchanged(update, requireNotNull((state as T[]).find(item => item.id == update.id), "update called before state ready"), reactNative, ["id"]) : update;
+                        const keys = Object.keys(pruned);
+                        return (keys.length === 1 && keys[0] === "id") ? [] : [filter(await inverseTransformer(pruned))];
+                    }))).flat()
+                }
+                const route = routeFunction(`${resource}.batch.update`, params);
+                return (useFormData || objectNeedsFormDataConversion(body, reactNative)) ? axios.post<T[]>(route, objectToFormData({
+                    ...body,
+                    _method: "put"
+                }, reactNative), {
+                    ...config,
+                    headers: {
+                        ...config?.headers,
+                        "content-type": "multipart/form-data"
+                    }
+                }) : axios.put<T[]>(route, body, config);
+            })() : null;
+            if (updateMethod === "on-success") {
+                await Promise.all((await promise!).data.map(async update => handleUpdated(filter(await transformer(update)))));
+            }
+            else {
+                for (const item of update) {
+                    handleUpdated(item as DeepPartial<T>);
+                }
+                if (promise) {
+                    await Promise.all((await promise!).data.map(async update => handleUpdated(filter(await transformer(update)))));
+                }
+            }
+        }, [state, axios, params, routeFunction, resourceContext, ignoreContext]);
     
         const destroyList = useCallback(async (id: T["id"] | "single", updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
             if (!ignoreContext && isNotNull(resourceContext)) {
@@ -453,7 +493,7 @@ export default function createResource<T extends Resource, U extends object = T,
                 } : {loading, refresh, error, extra, store}), 
                 ...(id !== undefined 
                     ? {update: updateSingle, destroy: destroySingle} 
-                    : {update: updateList, destroy: destroyList})
+                    : {update: updateList, destroy: destroyList, batchUpdate})
             }
         ];
     }) as {
