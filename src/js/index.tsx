@@ -10,7 +10,7 @@ import { filter, identity, objectNeedsFormDataConversion, objectToFormData, prun
 type UpdateMethod = "on-success" | "immediate" | "local-only";
 
 export interface Resource {
-    id: string | number
+    id?: string | number
 }
 
 type Param = string | number | boolean | undefined;
