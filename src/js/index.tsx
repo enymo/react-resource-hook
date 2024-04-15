@@ -108,7 +108,7 @@ interface ReturnCommon<T extends Resource, U> {
     /**
      * Error that occured during last auto-refresh. null if no error occured or refresh is still in progress
      */
-    error: AxiosError | null
+    error: AxiosError<any> | null
 }
 
 export interface ReturnList<T extends Resource, U, V> extends ReturnCommon<T, U> {
