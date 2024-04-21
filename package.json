@@ -9,7 +9,10 @@
     ".": {
       "import": "./dist/index.mjs",
       "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": {
+        "import": "./dist/index.d.mts",
+        "require": "./dist/index.d.ts"
+      }
     }
   },
   "tsup": {
@@ -39,7 +42,7 @@
     "@types/react": "^18.0.25",
     "postcss": "^8.4.17",
     "ts-essentials": "^9.3.2",
-    "tsup": "^6.2.2",
+    "tsup": "^8.0.2",
     "typescript": "^4.7.4"
   },
   "peerDependencies": {
