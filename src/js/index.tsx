@@ -296,9 +296,7 @@ export default function createResource<T extends Resource, U extends object = T,
                 if (id === undefined) {
                     handleCreated(result);
                 }
-                return {
-                    saved: Promise.resolve(result)
-                };
+                return result;
             }
             else {
                 handleCreated(item as T);
