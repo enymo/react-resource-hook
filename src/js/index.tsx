@@ -252,7 +252,7 @@ export default function createResource<T extends Resource, U extends object = T,
     
         const handleCreated = useCallback((item: T) => {
             if (onCreated?.(item) ?? true) {
-                setState(prev => (isNotNull(prev) && (prev as T[]).find(s => s.id == item.id)) ? prev : [...prev as T[], item]);
+                setState(prev => (isNotNull(prev) && (prev as T[]).find(s => s.id !== undefined && s.id == item.id)) ? prev : [...prev as T[], item]);
             }
         }, [onCreated, setState]);
         const handleUpdated = useCallback((item: DeepPartial<T>) => {
