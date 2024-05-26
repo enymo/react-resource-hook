@@ -71,7 +71,7 @@ interface OptionsList<T extends Resource, U> extends OptionsCommon<T, U> {
      * @param item The item that has been created (already transformed)
      */
     onCreated?: OnCreatedListener<T>,
-    sorter?(a: T, b: T): 1 | 0 | -1
+    sorter?(a: T, b: T): number
 }
 
 interface OptionsSingle<T extends Resource, U> extends OptionsCommon<T, U> {
