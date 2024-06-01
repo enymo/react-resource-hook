@@ -189,6 +189,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                             const response = await actions.refresh<V>(config);
                             setExtra(response.extra);
                             setState(response.data);
+                            setError(response.error);
                         }
                         else {
                             setState(id === undefined ? [] : null);
@@ -202,7 +203,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
         
             useEffect(() => {
                 if (autoRefresh) {
-                    refresh().catch(setError);    
+                    refresh()   
                 }
             }, [refresh, autoRefresh, setError]);
     

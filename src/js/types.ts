@@ -147,9 +147,10 @@ export interface OptionsImplementation<T extends Resource, U> extends OptionsCom
 
 export type MaybePromise<T> = Promise<T> | T
 
-type ResourceResponse<T extends Resource, U = null> = {
+type ResourceResponse<T extends Resource, U, V> = {
     data: T[],
-    extra: U
+    extra: U,
+    error: V | null
 }
 
 export interface CreateBackendOptions<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error> {
@@ -161,7 +162,7 @@ export interface CreateBackendOptions<ResourceConfig extends {}, UseConfig exten
             batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
             destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
             batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
-            refresh: <U = null>(config: RequestConfig | undefined) => MaybePromise<ResourceResponse<T, U>>,
+            refresh: <U = null>(config: RequestConfig | undefined) => MaybePromise<ResourceResponse<T, U, Error>>,
             query: (data: any, config: RequestConfig | undefined) => MaybePromise<T | T[] | null>
         }),
         eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler?: (payload: T) => void, dependencies?: React.DependencyList) => void
