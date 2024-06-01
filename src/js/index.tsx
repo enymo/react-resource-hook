@@ -3,7 +3,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { DeepPartial } from "ts-essentials";
 import { CreateBackendOptions, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ReturnList, ReturnSingle, UpdateMethod } from "./types";
 
-export type { OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params, Resource, ReturnList, ReturnSingle, RouteFunction } from "./types";
+export type { CreateBackendOptions, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params, Resource, ReturnList, ReturnSingle, RouteFunction } from "./types";
 
 export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter }: CreateBackendOptions<ResourceConfig, UseConfig, RequestConfig, Error>) {     
     return <T extends Resource, U extends object = T, V = null>(resource: string, {
