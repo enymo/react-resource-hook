@@ -1,34 +1,101 @@
-import type { AxiosError, AxiosInstance, AxiosRequestConfig } from "axios";
 import type { DeepPartial } from "ts-essentials";
-import type { Params, Resource, RouteFunction } from "./publicTypes";
+
+export interface Resource {
+    id?: string | number
+}
+
+export interface ReturnCommon<RequestConfig, Error, T extends Resource, U> {
+    /**
+     * Whether the current resource is still being fetched after initial render or parameter change
+     */
+    loading: boolean,
+    /**
+     * Stores a new item in the current resource
+     * @param item The item to be stored
+     * @param config An AxiosRequestConfig may be passed to be used for the request
+     * @returns The created resource.
+     */
+    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<T>,
+    /**
+     * Fully refreshed the resource by sending the initial get request again.
+     * @param config An axios request config to be used to the request
+     * @returns A void promise that resolves when the refresh is complete.
+     */
+    refresh: (config?: RequestConfig) => Promise<void>,
+    /**
+     * Error that occured during last auto-refresh. null if no error occured or refresh is still in progress
+     */
+    error: Error | null
+}
+
+export interface ReturnList<RequestConfig, Error, T extends Resource, U, V> extends ReturnCommon<RequestConfig, Error, T, U> {
+    /**
+     * Updates an existing item for the current resource
+     * @param id The id of the item to update
+     * @param update Partial item. Omitted fields are considered unchanged.
+     * @param updateMethod The update method to be used
+     *  'on-success' will only update the resource in the frontend once the backend returns a successful response.
+     *      The frontend will be updated using the data from the backends response (which might be different from the data sent in the request)
+     *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will be updated using
+     *      only the data provided in the request, but a subsequent 'updated' event (socket only) may update the item again once the requests succeeeds
+     *  'local-only' will only update the frontend with the values provided, without sending any request to the backend
+     * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
+     * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
+     */
+    update: (id: T["id"], update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
+    batchUpdate: (update: (DeepPartial<U> & {id: T["id"]})[], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
+    /**
+     * Destroys an item for the current resource
+     * @param id The id of the item to destroy
+     * @param updateMethod The update method to be used
+     *  'on-success' will only remove the item in the frontend once the backend returns a successful response.
+     *  'immediate' will update the frontend immedately while also sending the request to the backend
+     *  'local-only' will only remove the item in the frontend
+     * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
+     * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
+     */
+    destroy: (id: T["id"], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
+    /**
+     * Extra data returned from the initial get request. Requires 'withExtra' option to be set to 'true'. See documentation
+     * for this option for the expected response format
+     */
+    extra: V | null
+}
+
+export interface ReturnSingle<RequestConfig, Error, T extends Resource, U = T> extends ReturnCommon<RequestConfig, Error, T, U> {
+    /**
+     * Updates the current item
+     * @param update Partial item. Omitted fields will be considered unchanged.
+     * @param updateMethod The update method to be used
+     *  'on-success' will only update the resource in the frontend once the backend returns a successful response.
+     *      The frontend will be updated using the data from the backends response (which might be different from the data sent in the request)
+     *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will be updated using
+     *      only the data provided in the request, but a subsequent 'updated' event (socket only) may update the item again once the requests succeeeds
+     *  'local-only' will only update the frontend with the values provided, without sending any request to the backend
+     * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
+     * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
+     */
+    update: (update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
+    /**
+     * Destroys the current item
+     * @param updateMethod The update method to be used
+     *  'on-success' will only remove the item in the frontend once the backend returns a successful response.
+     *  'immediate' will update the frontend immedately while also sending the request to the backend
+     *  'local-only' will only remove the item in the frontend
+     * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
+     * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
+     */
+    destroy: (updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>
+}
+
+export type Params = {[param: string]: Param | Param[] | Params}
+export type RouteFunction = (route: string, params?: Params) => string
 
 export type UpdateMethod = "on-success" | "immediate" | "local-only";
 
 
 
 export type Param = string | number | boolean | undefined;
-
-
-export interface ResourceContext {
-    /**
-     * The axios instance to be used for all requests by the resource hook. If you don't need a custom instance,
-     * you can pass the global axios import instead
-     */
-    axios: AxiosInstance,
-    /**
-     * The route function to be used. The resource hook was developed to be used with laravel and ziggy-js, but any route function
-     * that uses the same function signature can be used.
-     * 
-     * NOTE: As of 06/12/2023, ziggy-js types are incorrect, even though the implementation isn't. Therefore, ziggys 'route' has to
-     * be cast to RouteFunction to be used with the resource hook
-     */
-    routeFunction: RouteFunction,
-    /**
-     * Should be set to true if the hook is used in a react native project. This slightly changes the behavior of the hooks form data
-     * converter to account for react natives unique handling of file uploads.
-     */
-    reactNative?: boolean
-}
 
 export type OnCreatedListener<T extends Resource> = (item: T) => void;
 export type OnUpdatedListener<T extends Resource> = (item: DeepPartial<T>) => void;
@@ -78,35 +145,25 @@ export interface OptionsImplementation<T extends Resource, U> extends OptionsCom
     sorter?: OptionsList<T, U>["sorter"]
 }
 
-export interface ReturnCommon<T extends Resource, U> {
-    /**
-     * Whether the current resource is still being fetched after initial render or parameter change
-     */
-    loading: boolean,
-    /**
-     * Stores a new item in the current resource
-     * @param item The item to be stored
-     * @param config An AxiosRequestConfig may be passed to be used for the request
-     * @returns The created resource.
-     */
-    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: AxiosRequestConfig) => Promise<T>,
-    /**
-     * Fully refreshed the resource by sending the initial get request again.
-     * @param config An axios request config to be used to the request
-     * @returns A void promise that resolves when the refresh is complete.
-     */
-    refresh: (config?: AxiosRequestConfig) => Promise<void>,
-    /**
-     * Error that occured during last auto-refresh. null if no error occured or refresh is still in progress
-     */
-    error: AxiosError<any> | null
+export type MaybePromise<T> = Promise<T> | T
+
+type ResourceResponse<T extends Resource, U = null> = {
+    data: T[],
+    extra: U
 }
 
-export interface CreateBackendOptions<T, U> {
-    adapter: {
-        create: (context: T, resource: Resource, config: U) => Promise<Resource> | Resource,
-        update: (context: T, resource: Partial<Resource>, config: U) => Promise<Resource> | Resource,
-        destroy: (context: T, id: Resource["id"], config: U) => Promise<void> | void,
-        eventHook: (event: string, handler: (payload: Resource) => void, dependencies?: React.DependencyList) => void
+export interface CreateBackendOptions<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error> {
+    adapter: (resource: string, config: Partial<ResourceConfig>) => {
+        actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => ({
+            store: (resource: any, config: RequestConfig | undefined) => MaybePromise<T>,
+            batchStore: (resources: any[], config: RequestConfig | undefined) => MaybePromise<T[]>,
+            update: (id: Resource["id"], resource: any, config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>>,
+            batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
+            destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
+            batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
+            refresh: <U = null>(config: RequestConfig | undefined) => MaybePromise<ResourceResponse<T, U>>,
+            query: (data: any, config: RequestConfig | undefined) => MaybePromise<T | T[] | null>
+        }),
+        eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler?: (payload: T) => void, dependencies?: React.DependencyList) => void
     }
 }

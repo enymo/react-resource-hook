@@ -1,34 +1,20 @@
-import { createRequiredContext } from "@enymo/react-better-context";
-import { CreateBackendOptions } from "./types";
-import { Resource } from "./publicTypes";
-import { identity } from "./util";
+import { isNotNull, requireNotNull } from "@enymo/ts-nullsafe";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { DeepPartial } from "ts-essentials";
+import { CreateBackendOptions, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ReturnList, ReturnSingle, UpdateMethod } from "./types";
 
-export default function createResourceBackend<T extends {}, U>(config: CreateBackendOptions<T, U>) {
-    const [ResourceProvider, useResourceConfig] = createRequiredContext<T>("ResourceProvider must be present in the component tree");
-    export { ResourceProvider };
-    
-    const createResource = <T extends Resource, U extends object = T, V = null>(resource: string, {
-        paramName: paramNameOverride,
-        socketEvent: eventOverrideConfig,
+export type { OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params, Resource, ReturnList, ReturnSingle, RouteFunction } from "./types";
+
+export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter }: CreateBackendOptions<ResourceConfig, UseConfig, RequestConfig, Error>) {     
+    return <T extends Resource, U extends object = T, V = null>(resource: string, {
         defaultUpdateMethod = "on-success",
-        useFormData = false,
-        withExtra = false,
-        pruneUnchanged: pruneUnchangedOverride = false,
-        transformer = identity,
-        inverseTransformer = identity
+        ...config
     }: {
-        paramName?: string,
-        socketEvent?: string,
         defaultUpdateMethod?: UpdateMethod,
-        useFormData?: boolean,
-        pruneUnchanged?: boolean,
-        withExtra?: boolean,
-        transformer?(item: any): DeepPartial<T> | Promise<DeepPartial<T>>,
-        inverseTransformer?(item: DeepPartial<U>): any | Promise<any>
-    } = {}) {
+    } & Partial<ResourceConfig> = {}) => {
         const ResourceContext = createContext<{
             state: T[],
-            actions: ReturnList<T, U, V>,
+            actions: ReturnList<RequestConfig, Error, T, U, V>,
             addCreatedListener(listener: OnCreatedListener<T>): void,
             removeCreatedListener(listener: OnCreatedListener<T>): void,
             addUpdatedListener(listener: OnUpdatedListener<T>): void,
@@ -36,6 +22,8 @@ export default function createResourceBackend<T extends {}, U>(config: CreateBac
             addDestroyedListener(listener: OnDestroyedListener<T>): void,
             removeDestroyedListener(listener: OnDestroyedListener<T>): void
         } | null>(null);
+
+        const {actionHook: useActions, eventHook: useEvent} = adapter(resource, config as Partial<ResourceConfig>);
     
         const useResource = (({
             id,
@@ -45,14 +33,14 @@ export default function createResourceBackend<T extends {}, U>(config: CreateBac
             onUpdated,
             onDestroyed,
             autoRefresh = true,
-            ignoreContext = false
-        }: OptionsImplementation<T, U> = {}) => {
+            ignoreContext = false,
+            ...resourceConfig
+        }: OptionsImplementation<T, U> & Partial<UseConfig> = {}) => {
             const isArray = useCallback((input: T | T[] | null): input is T[] => {
                 return id === undefined;
             }, [id]);
-        
+            const actions = useActions<T>(resourceConfig as Partial<UseConfig>, params);
             const resourceContext = useContext(ResourceContext);
-            const {axios, routeFunction, reactNative = false} = useResourceConfig();
             const [localState, setState] = useState<T[] | T | null>(id === undefined ? [] : null);
             const state = useMemo(() => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
@@ -69,22 +57,8 @@ export default function createResourceBackend<T extends {}, U>(config: CreateBac
             }, [ignoreContext, resourceContext?.state, localState]);
             const sortedState = useMemo(() => (!isArray(state) || !sorter) ? state : [...state].sort(sorter), [state, sorter, isArray]);
             const [extra, setExtra] = useState<V | null>(null);
-            const [error, setError] = useState<AxiosError | null>(null);
+            const [error, setError] = useState<Error | null>(null);
             const [loading, setLoading] = useState(autoRefresh);
-            const [eventOverride, setEventOverride] = useState<string | null>(null);
-            
-            const socketClient = useSocketClient();
-            const event = useMemo(() => socketClient && (eventOverrideConfig ?? eventOverride ?? resource?.split(".").map(part => {
-                const singular = pluralize.singular(part).replaceAll("-", "_");
-                return (params && singular in params) ? `${part}.${params[singular]}` : part;
-            }).join(".") ?? null), [
-                params,
-                socketClient,
-                eventOverrideConfig,
-                eventOverride,
-                resource
-            ]);
-            const paramName = useMemo(() => paramNameOverride ?? (resource && pluralize.singular(requireNotNull(resource.split(".").pop())).replace(/-/g, "_")), [paramNameOverride, resource]);
         
             const handleCreated = useCallback((item: T) => {
                 if (onCreated?.(item) ?? true) {
@@ -111,24 +85,17 @@ export default function createResourceBackend<T extends {}, U>(config: CreateBac
                 
             }, [onDestroyed, setState, id]);
         
-            useSocket<Resource>(((ignoreContext || !isNotNull(resourceContext)) && id === undefined && event) ? `${event}.created` : null, async item => !loading && handleCreated(filter(await transformer(item) as T)), [loading, handleCreated]);
-            useSocket<Resource>((ignoreContext || !isNotNull(resourceContext)) && event ? `${event}.updated` : null, async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(filter(await transformer(item))), [id, state, loading, handleUpdated]);
-            useSocket<number|string>((ignoreContext || !isNotNull(resourceContext)) && event ? `${event}.destroyed` : null, delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId), [id, state, loading, handleDestroyed]);
+            useEvent<T>(params, "created", ((ignoreContext || !isNotNull(resourceContext)) && id === undefined) ? (async item => !loading && handleCreated(item)) : undefined, [loading, handleCreated]);
+            useEvent<DeepPartial<T>>(params, "updated", (ignoreContext || !isNotNull(resourceContext)) ? (async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(item)) : undefined, [id, state, loading, handleUpdated]);
+            useEvent<T["id"]>(params, "destroyed", (ignoreContext || !isNotNull(resourceContext)) ? (delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId)) : undefined, [id, state, loading, handleDestroyed]);
         
-            const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod,  config?: AxiosRequestConfig) => {            
+            const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod,  config?: RequestConfig) => {            
                 const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
                 const promise = updateMethod !== "local-only" ? (async () => {
-                    const body = await inverseTransformer(item);
-                    return axios.post(routeFunction(`${resource}.store`, params), (useFormData || objectNeedsFormDataConversion(body, reactNative)) ? objectToFormData(body, reactNative) : body, useFormData ? {
-                        ...config,
-                        headers: {
-                            ...config?.headers,
-                            "content-type": "multipart/form-data"
-                        },
-                    } : config)
+                    return actions.store(item, config)
                 })() : null;
                 if (updateMethod === "on-success" || id !== undefined) {
-                    const result = await transformer((await promise!).data) as T;
+                    const result = await promise!;
                     if (id === undefined) {
                         handleCreated(result);
                     }
@@ -137,39 +104,25 @@ export default function createResourceBackend<T extends {}, U>(config: CreateBac
                 else {
                     handleCreated(item as T);
                     if (updateMethod !== "local-only") {
-                        const result = await transformer((await promise!).data) as T;
+                        const result = await promise!;
                         setState(prev => (prev as T[]).map(i => i === item ? result : i));
                         return result;
                     }
                     return item;
                 }
-            }, [axios, params, routeFunction]);
+            }, [actions.store, setState]);
         
-            const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+            const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
                     return resourceContext.actions.update(id, update, updateMethodOverride, config);
                 }
                 
                 const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
                 const promise = updateMethod !== "local-only" ? (async () => {
-                    const body = filter(await inverseTransformer(pruneUnchangedOverride ? pruneUnchanged(update, requireNotNull(isArray(state) ? state.find(item => item.id == id) : state, "update called before state ready"), reactNative) : update));
-                    const route = routeFunction(`${resource}.update`, id === "single" ? params : {
-                        [paramName!]: id,
-                        ...params
-                    });
-                    return (useFormData || objectNeedsFormDataConversion(body, reactNative)) ? axios.post<T>(route, objectToFormData({
-                        ...body,
-                        _method: "put"
-                    }, reactNative), {
-                        ...config,
-                        headers: {
-                            ...config?.headers,
-                            "content-type": "multipart/form-data"
-                        }
-                    }) : axios.put<T>(route, body, config)
+                    return actions.update(id, update, config);
                 })() : null;
                 if (updateMethod === "on-success") {
-                    handleUpdated(filter(await transformer((await promise!).data)));
+                    handleUpdated(await promise!);
                 }
                 else {
                     handleUpdated({
@@ -177,64 +130,44 @@ export default function createResourceBackend<T extends {}, U>(config: CreateBac
                         ...update
                     } as DeepPartial<T>);
                     if (promise) {
-                        handleUpdated(filter(await transformer((await promise!).data)));
+                        handleUpdated(await promise!);
                     }
                 }
-            }, [state, axios, params, routeFunction, resourceContext, ignoreContext]);
+            }, [state, resourceContext, ignoreContext, actions.update]);
         
-            const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+            const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 return updateList(requireNotNull(id), update, updateMethodOverride, config);
             }, [id, updateList]);
     
-            const batchUpdate = useCallback(async (update: (DeepPartial<U> & {id: T["id"]})[], updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+            const batchUpdate = useCallback(async (update: (DeepPartial<U> & {id: T["id"]})[], updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
                     return resourceContext.actions.batchUpdate(update, updateMethodOverride, config);
                 }
                 
                 const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
                 const promise = updateMethod !== "local-only" ? (async () => {
-                    const body = {
-                        _batch: (await Promise.all(update.map(async update => {
-                            const pruned: DeepPartial<U> = pruneUnchangedOverride ? pruneUnchanged(update, requireNotNull((state as T[]).find(item => item.id == update.id), "update called before state ready"), reactNative, ["id"]) : update;
-                            const keys = Object.keys(pruned);
-                            return (keys.length === 1 && keys[0] === "id") ? [] : [filter(await inverseTransformer(pruned))];
-                        }))).flat()
-                    }
-                    const route = routeFunction(`${resource}.batch.update`, params);
-                    return (useFormData || objectNeedsFormDataConversion(body, reactNative)) ? axios.post<T[]>(route, objectToFormData({
-                        ...body,
-                        _method: "put"
-                    }, reactNative), {
-                        ...config,
-                        headers: {
-                            ...config?.headers,
-                            "content-type": "multipart/form-data"
-                        }
-                    }) : axios.put<T[]>(route, body, config);
+                    return actions.batchUpdate(update, config);
                 })() : null;
                 if (updateMethod === "on-success") {
-                    await Promise.all((await promise!).data.map(async update => handleUpdated(filter(await transformer(update)))));
+                    await Promise.all((await promise!).map(async update => handleUpdated(update)));
                 }
                 else {
                     for (const item of update) {
                         handleUpdated(item as DeepPartial<T>);
                     }
                     if (promise) {
-                        await Promise.all((await promise!).data.map(async update => handleUpdated(filter(await transformer(update)))));
+                        await Promise.all((await promise!).map(async update => handleUpdated(update)));
                     }
                 }
-            }, [state, axios, params, routeFunction, resourceContext, ignoreContext]);
+            }, [state, resourceContext, ignoreContext, actions.batchUpdate]);
         
-            const destroyList = useCallback(async (id: T["id"] | "single", updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => {
+            const destroyList = useCallback(async (id: T["id"] | "single", updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
                     return resourceContext.actions.destroy(id, updateMethodOverride, config);
                 }
     
                 const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" && axios.delete(routeFunction(`${resource}.destroy`, id === "single" ? params : {
-                    [paramName!]: id,
-                    ...params
-                }), config);
+                const promise = updateMethod !== "local-only" && actions.destroy(id, config);
                 if (updateMethod !== "immediate") {
                     await promise;
                     handleDestroyed(id);
@@ -243,35 +176,21 @@ export default function createResourceBackend<T extends {}, U>(config: CreateBac
                     handleDestroyed(id);
                     return promise;
                 }
-            }, [axios, params, routeFunction, resourceContext, ignoreContext]);
+            }, [resourceContext, ignoreContext, actions.destroy]);
         
-            const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: AxiosRequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
+            const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: RequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
         
-            const refresh = useCallback(async (config?: AxiosRequestConfig) => {
+            const refresh = useCallback(async (config?: RequestConfig) => {
                 if (ignoreContext || !isNotNull(resourceContext)) {
                     try {
                         setError(null);
                         if (id !== null) {
                             setLoading(true);
-                            const response = await axios.get(id ? routeFunction(`${resource}.show`, id === "single" ? params : {
-                                [paramName!]: id,
-                                ...params
-                            }) : routeFunction(`${resource}.index`, params), config);
-                            setEventOverride(response.headers["x-socket-event"] ?? null);
-                            const data = (() => {
-                                if (withExtra) {
-                                    const {data, ...extra} = response.data;
-                                    setExtra(extra);
-                                    return data;
-                                }
-                                else {
-                                    return response.data;
-                                }
-                            })()
-                            setState(await (id ? transformer(data) as T : Promise.all(data.map(transformer))));
+                            const response = await actions.refresh<V>(config);
+                            setExtra(response.extra);
+                            setState(response.data);
                         }
                         else {
-                            setEventOverride(null);
                             setState(id === undefined ? [] : null);
                         }
                     }
@@ -279,18 +198,11 @@ export default function createResourceBackend<T extends {}, U>(config: CreateBac
                         setLoading(false);
                     }
                 }
-            }, [axios, routeFunction, setState, id, setEventOverride, setLoading, params, setError, ignoreContext, resourceContext]);
+            }, [setState, id, setLoading, setError, ignoreContext, resourceContext, actions.refresh]);
         
             useEffect(() => {
                 if (autoRefresh) {
-                    refresh().catch(e => {
-                        if (e instanceof AxiosError) {
-                            setError(e);
-                        }
-                        else {
-                            throw e;
-                        }
-                    });    
+                    refresh().catch(setError);    
                 }
             }, [refresh, autoRefresh, setError]);
     
@@ -331,8 +243,8 @@ export default function createResourceBackend<T extends {}, U>(config: CreateBac
                 }
             ];
         }) as {
-            (options?: OptionsList<T, U>): [T[], ReturnList<T, U, V>],
-            (options: OptionsSingle<T, U>): [T | null, ReturnSingle<T, U>]
+            (options?: OptionsList<T, U>): [T[], ReturnList<RequestConfig, Error, T, U, V>],
+            (options: OptionsSingle<T, U>): [T | null, ReturnSingle<RequestConfig, Error, T, U>]
         }
     
         const ResourceProvider = ({params, children}: {
