@@ -1,16 +1,21 @@
 import { isNotNull, requireNotNull } from "@enymo/ts-nullsafe";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DeepPartial } from "ts-essentials";
-import { CreateBackendOptions, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ReturnList, ReturnSingle, UpdateMethod } from "./types";
+import { OnCreatedListener, OnDestroyedListener, OnUpdatedListener, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ResourceBackendAdapter, ReturnList, ReturnSingle, UpdateMethod } from "./types";
+import { pruneUnchanged } from "./util";
 
-export type { CreateBackendOptions, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params, Resource, ReturnList, ReturnSingle, RouteFunction } from "./types";
+export type { OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params, Resource, ResourceBackendAdapter, ResourceQueryResponse, ResourceResponse, ReturnList, ReturnSingle } from "./types";
 
-export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter }: CreateBackendOptions<ResourceConfig, UseConfig, RequestConfig, Error>) {     
+export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter } : {
+    adapter: ResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig, Error>
+}) {     
     return <T extends Resource, U extends object = T, V = null>(resource: string, {
         defaultUpdateMethod = "on-success",
+        pruneUnchanged: pruneUnchangedConfig = false,
         ...config
     }: {
         defaultUpdateMethod?: UpdateMethod,
+        pruneUnchanged?: boolean
     } & Partial<ResourceConfig> = {}) => {
         const ResourceContext = createContext<{
             state: T[],
@@ -62,7 +67,10 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
         
             const handleCreated = useCallback((item: T) => {
                 if (onCreated?.(item) ?? true) {
-                    setState(prev => (isNotNull(prev) && (prev as T[]).find(s => s.id == item.id)) ? prev : [...prev as T[], item]);
+                    setState(prev => ((prev as T[]).find(s => s.id == item.id)) ? (prev as T[]).map(s => s.id == item.id ? {
+                        ...s,
+                        ...item
+                    } : s) : [...prev as T[], item]);
                 }
             }, [onCreated, setState]);
             const handleUpdated = useCallback((item: DeepPartial<T>) => {
@@ -114,7 +122,8 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
         
             const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
-                    return resourceContext.actions.update(id, update, updateMethodOverride, config);
+                    const comparison = pruneUnchangedConfig ? isArray(state) ? state.find(item => item.id === id) ?? null : state : null;
+                    return resourceContext.actions.update(id, comparison ? pruneUnchanged(update, comparison) : update, updateMethodOverride, config);
                 }
                 
                 const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
@@ -133,7 +142,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         handleUpdated(await promise!);
                     }
                 }
-            }, [state, resourceContext, ignoreContext, actions.update]);
+            }, [state, resourceContext, ignoreContext, actions.update, state]);
         
             const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 return updateList(requireNotNull(id), update, updateMethodOverride, config);
@@ -145,21 +154,22 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                 }
                 
                 const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" ? (async () => {
-                    return actions.batchUpdate(update, config);
-                })() : null;
+                const promise = updateMethod !== "local-only" ? actions.batchUpdate(update.map(update => {
+                    const comparison = pruneUnchangedConfig ? (state as T[]).find(item => item.id === update.id) : undefined;
+                    return (comparison ? pruneUnchanged(update, comparison, ["id"]) : update) as DeepPartial<T>;
+                }).filter(update => Object.keys(update).length > 1), config) : null;
                 if (updateMethod === "on-success") {
-                    await Promise.all((await promise!).map(async update => handleUpdated(update)));
+                    (await promise!).map(update => handleUpdated(update));
                 }
                 else {
                     for (const item of update) {
                         handleUpdated(item as DeepPartial<T>);
                     }
                     if (promise) {
-                        await Promise.all((await promise!).map(async update => handleUpdated(update)));
+                        (await promise!).map(update => handleUpdated(update));
                     }
                 }
-            }, [state, resourceContext, ignoreContext, actions.batchUpdate]);
+            }, [state, resourceContext, ignoreContext, actions.batchUpdate, state]);
         
             const destroyList = useCallback(async (id: T["id"] | "single", updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
@@ -180,6 +190,21 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
         
             const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: RequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
         
+            const query = useCallback(async (data: any, config: RequestConfig) => {
+                const response = await actions.query(data, config);
+                if (response.update === "replace") {
+                    setState(response.data);
+                }
+                else {
+                    for (const item of response.data) {
+                        handleCreated(item);
+                    }
+                    for (const id of response.destroy) {
+                        handleDestroyed(id);
+                    }
+                }
+            }, [actions.query, setState, handleCreated, handleDestroyed]);
+
             const refresh = useCallback(async (config?: RequestConfig) => {
                 if (ignoreContext || !isNotNull(resourceContext)) {
                     try {
@@ -236,8 +261,9 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         refresh: resourceContext.actions.refresh,
                         error: resourceContext.actions.error,
                         extra: resourceContext.actions.extra,
-                        store: resourceContext.actions.store
-                    } : {loading, refresh, error, extra, store}), 
+                        store: resourceContext.actions.store,
+                        query: resourceContext.actions.query
+                    } : {loading, refresh, error, extra, store, query}), 
                     ...(id !== undefined 
                         ? {update: updateSingle, destroy: destroySingle} 
                         : {update: updateList, destroy: destroyList, batchUpdate})

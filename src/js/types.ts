@@ -12,16 +12,23 @@ export interface ReturnCommon<RequestConfig, Error, T extends Resource, U> {
     /**
      * Stores a new item in the current resource
      * @param item The item to be stored
-     * @param config An AxiosRequestConfig may be passed to be used for the request
+     * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns The created resource.
      */
     store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<T>,
     /**
      * Fully refreshed the resource by sending the initial get request again.
-     * @param config An axios request config to be used to the request
+     * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves when the refresh is complete.
      */
     refresh: (config?: RequestConfig) => Promise<void>,
+    /**
+     * Send a generic query to the backend
+     * @param data Any data to be sent to the backend.
+     * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
+     * @returns A void promise that resolves when the request ist complete
+     */
+    query: (data: any, config?: RequestConfig) => Promise<void>
     /**
      * Error that occured during last auto-refresh. null if no error occured or refresh is still in progress
      */
@@ -89,7 +96,6 @@ export interface ReturnSingle<RequestConfig, Error, T extends Resource, U = T> e
 }
 
 export type Params = {[param: string]: Param | Param[] | Params}
-export type RouteFunction = (route: string, params?: Params) => string
 
 export type UpdateMethod = "on-success" | "immediate" | "local-only";
 
@@ -134,7 +140,7 @@ export interface OptionsList<T extends Resource, U> extends OptionsCommon<T, U> 
 
 export interface OptionsSingle<T extends Resource, U> extends OptionsCommon<T, U> {
     /**
-     * The id of the resource to be requested or 'single' if it is a [singleton resource]{@link https://www.google.de}
+     * The id of the resource to be requested or 'single' if it is a [singleton resource]{@link https://www.example.com}
      */
     id: T["id"] | "single" | null,
 }
@@ -147,24 +153,28 @@ export interface OptionsImplementation<T extends Resource, U> extends OptionsCom
 
 export type MaybePromise<T> = Promise<T> | T
 
-type ResourceResponse<T extends Resource, U, V> = {
+export type ResourceResponse<T extends Resource, U, V> = {
     data: T[],
     extra: U,
     error: V | null
 }
 
-export interface CreateBackendOptions<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error> {
-    adapter: (resource: string, config: Partial<ResourceConfig>) => {
-        actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => ({
-            store: (resource: any, config: RequestConfig | undefined) => MaybePromise<T>,
-            batchStore: (resources: any[], config: RequestConfig | undefined) => MaybePromise<T[]>,
-            update: (id: Resource["id"], resource: any, config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>>,
-            batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
-            destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
-            batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
-            refresh: <U = null>(config: RequestConfig | undefined) => MaybePromise<ResourceResponse<T, U, Error>>,
-            query: (data: any, config: RequestConfig | undefined) => MaybePromise<T | T[] | null>
-        }),
-        eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler?: (payload: T) => void, dependencies?: React.DependencyList) => void
-    }
+export interface ResourceQueryResponse<T extends Resource> {
+    data: T[],
+    update: "merge" | "replace",
+    destroy: T["id"][]
+}
+
+export type ResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error> = (resource: string, config: Partial<ResourceConfig>) => {
+    actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => ({
+        store: (resource: any, config: RequestConfig | undefined) => MaybePromise<T>,
+        batchStore: (resources: any[], config: RequestConfig | undefined) => MaybePromise<T[]>,
+        update: (id: Resource["id"] | "single", resource: any, config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>>,
+        batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
+        destroy: (id: Resource["id"] | "single", config: RequestConfig | undefined) => MaybePromise<void>,
+        batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
+        refresh: <U = null>(config: RequestConfig | undefined) => MaybePromise<ResourceResponse<T, U, Error>>,
+        query: (data: any, config: RequestConfig | undefined) => MaybePromise<ResourceQueryResponse<T>>
+    }),
+    eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler?: (payload: T) => void, dependencies?: React.DependencyList) => void
 }
