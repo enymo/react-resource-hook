@@ -9,7 +9,7 @@ export type { OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params,
 export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter } : {
     adapter: ResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig, Error>
 }) {     
-    return <T extends Resource, U extends object = T, V = null>(resource: string, {
+    return <T extends Resource, U extends object = T, V = null, W extends boolean = false>(resource: string, {
         defaultUpdateMethod = "on-success",
         pruneUnchanged: pruneUnchangedConfig = false,
         ...config
@@ -97,11 +97,9 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
             useEvent<DeepPartial<T>>(params, "updated", (ignoreContext || !isNotNull(resourceContext)) ? (async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(item)) : undefined, [id, state, loading, handleUpdated]);
             useEvent<T["id"]>(params, "destroyed", (ignoreContext || !isNotNull(resourceContext)) ? (delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId)) : undefined, [id, state, loading, handleDestroyed]);
         
-            const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod,  config?: RequestConfig) => {            
+            const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {            
                 const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" ? (async () => {
-                    return actions.store(item, config)
-                })() : null;
+                const promise = updateMethod !== "local-only" ? actions.store(item, config) : null;
                 if (updateMethod === "on-success" || id !== undefined) {
                     const result = await promise!;
                     if (id === undefined) {
@@ -118,9 +116,37 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                     }
                     return item;
                 }
-            }, [actions.store, setState]);
+            }, [actions.store, setState, handleCreated]);
+
+            const batchStore = useCallback(async (items: DeepPartial<U>[], updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
+                const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
+                const promise = updateMethod !== "local-only" ? actions.batchStore(items, config) : null;
+                if (updateMethod === "on-success" || id !== undefined) {
+                    const result = await promise!;
+                    if (id === undefined) {
+                        for (const item of result) {
+                            handleCreated(item);
+                        }
+                    }
+                    return result;
+                }
+                else {
+                    for (const item of items) {
+                        handleCreated(item as T);
+                    }
+                    if (updateMethod !== "local-only") {
+                        const result = await promise!;
+                        setState(prev => (prev as T[]).map(i => {
+                            const index = items.findIndex(item => i === item);
+                            return index === -1 ? i : result[index];
+                        }));
+                        return result;
+                    }
+                    return items;
+                }
+            }, [actions.batchStore, setState, handleCreated]);
         
-            const updateList = useCallback(async (id: T["id"] | "single", update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
+            const updateList = useCallback(async (id: T["id"], update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
                     const comparison = pruneUnchangedConfig ? isArray(state) ? state.find(item => item.id === id) ?? null : state : null;
                     return resourceContext.actions.update(id, comparison ? pruneUnchanged(update, comparison) : update, updateMethodOverride, config);
@@ -142,7 +168,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         handleUpdated(await promise!);
                     }
                 }
-            }, [state, resourceContext, ignoreContext, actions.update, state]);
+            }, [state, resourceContext, ignoreContext, actions.update, state, handleUpdated]);
         
             const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 return updateList(requireNotNull(id), update, updateMethodOverride, config);
@@ -166,12 +192,14 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         handleUpdated(item as DeepPartial<T>);
                     }
                     if (promise) {
-                        (await promise!).map(update => handleUpdated(update));
+                        for (const item of await promise!) {
+                            handleUpdated(item);
+                        }
                     }
                 }
-            }, [state, resourceContext, ignoreContext, actions.batchUpdate, state]);
+            }, [state, resourceContext, ignoreContext, actions.batchUpdate, state, handleUpdated]);
         
-            const destroyList = useCallback(async (id: T["id"] | "single", updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
+            const destroyList = useCallback(async (id: T["id"], updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
                     return resourceContext.actions.destroy(id, updateMethodOverride, config);
                 }
@@ -180,19 +208,32 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                 const promise = updateMethod !== "local-only" && actions.destroy(id, config);
                 if (updateMethod !== "immediate") {
                     await promise;
-                    handleDestroyed(id);
                 }
-                else {
-                    handleDestroyed(id);
-                    return promise;
-                }
-            }, [resourceContext, ignoreContext, actions.destroy]);
+                handleDestroyed(id);
+                return promise;
+            }, [resourceContext, ignoreContext, actions.destroy, handleDestroyed]);
         
             const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: RequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
+
+            const batchDestroy = useCallback(async (ids: number[], updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
+                if (!ignoreContext && isNotNull(resourceContext)) {
+                    return resourceContext.actions.batchDestroy(ids, updateMethodOverride, config);
+                }
+
+                const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
+                const promise = updateMethod !== "local-only" && actions.batchDestroy(ids, config);
+                if (updateMethod !== "immediate") {
+                    await promise;
+                }
+                for (const id of ids) {
+                    handleDestroyed(id);
+                }
+                return promise;
+            }, [ignoreContext, resourceContext, actions.batchDestroy, handleDestroyed]);
         
-            const query = useCallback(async (data: any, config: RequestConfig) => {
-                const response = await actions.query(data, config);
-                if (response.update === "replace") {
+            const query = useCallback(async (action: string, data: any, params?: Params, config?: RequestConfig) => {
+                const response = await actions.query(action, data, params, config);
+                if (response.update === "replace" || id !== undefined) {
                     setState(response.data);
                 }
                 else {
@@ -262,16 +303,17 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         error: resourceContext.actions.error,
                         extra: resourceContext.actions.extra,
                         store: resourceContext.actions.store,
+                        batchStore: resourceContext.actions.batchStore,
                         query: resourceContext.actions.query
-                    } : {loading, refresh, error, extra, store, query}), 
+                    } : {loading, refresh, error, extra, store, batchStore, query}), 
                     ...(id !== undefined 
                         ? {update: updateSingle, destroy: destroySingle} 
-                        : {update: updateList, destroy: destroyList, batchUpdate})
+                        : {update: updateList, destroy: destroyList, batchUpdate, batchDestroy})
                 }
             ];
         }) as {
             (options?: OptionsList<T, U>): [T[], ReturnList<RequestConfig, Error, T, U, V>],
-            (options: OptionsSingle<T, U>): [T | null, ReturnSingle<RequestConfig, Error, T, U>]
+            (options:  OptionsSingle<T, U>): [T | null, ReturnSingle<RequestConfig, Error, T, U>]
         }
     
         const ResourceProvider = ({params, children}: {

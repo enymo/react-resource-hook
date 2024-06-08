@@ -12,10 +12,29 @@ export interface ReturnCommon<RequestConfig, Error, T extends Resource, U> {
     /**
      * Stores a new item in the current resource
      * @param item The item to be stored
+     * @param updateMethod The update method to be used
+     *  'on-success' will only update the resource in the frontend once the backend returns a successful response.
+     *      The frontend will be updated using the data from the backends response (which might be different from the data sent in the request)
+     *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will be updated using
+     *      only the data provided in the request, but the response will update the item again once the requests succeeeds
+     *  'local-only' will only update the frontend with the values provided, without sending any request to the backend
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns The created resource.
      */
     store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<T>,
+    /**
+     * Stores several items in the current resource
+     * @param items An array of items to be stored
+     * @param updateMethod The update method to be used
+     *  'on-success' will only update the resource in the frontend once the backend returns a successful response.
+     *      The frontend will be updated using the data from the backends response (which might be different from the data sent in the request)
+     *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will be updated using
+     *      only the data provided in the request, but the response will update the item again once the requests succeeeds
+     *  'local-only' will only update the frontend with the values provided, without sending any request to the backend
+     * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
+     * @returns The created resources as an array
+     */
+    batchStore: (items: DeepPartial<U>[], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<T[]>
     /**
      * Fully refreshed the resource by sending the initial get request again.
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
@@ -28,7 +47,7 @@ export interface ReturnCommon<RequestConfig, Error, T extends Resource, U> {
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves when the request ist complete
      */
-    query: (data: any, config?: RequestConfig) => Promise<void>
+    query: (action: string, data: any, params?: Params, config?: RequestConfig) => Promise<void>
     /**
      * Error that occured during last auto-refresh. null if no error occured or refresh is still in progress
      */
@@ -44,10 +63,10 @@ export interface ReturnList<RequestConfig, Error, T extends Resource, U, V> exte
      *  'on-success' will only update the resource in the frontend once the backend returns a successful response.
      *      The frontend will be updated using the data from the backends response (which might be different from the data sent in the request)
      *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will be updated using
-     *      only the data provided in the request, but a subsequent 'updated' event (socket only) may update the item again once the requests succeeeds
+     *      only the data provided in the request, but the response will update the item again once the requests succeeeds
      *  'local-only' will only update the frontend with the values provided, without sending any request to the backend
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
-     * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
+     * @returns A void promise that resolves once the request is complete.
      */
     update: (id: T["id"], update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
     batchUpdate: (update: (DeepPartial<U> & {id: T["id"]})[], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
@@ -59,9 +78,20 @@ export interface ReturnList<RequestConfig, Error, T extends Resource, U, V> exte
      *  'immediate' will update the frontend immedately while also sending the request to the backend
      *  'local-only' will only remove the item in the frontend
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
-     * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
+     * @returns A void promise that resolves once the request is complete.
      */
     destroy: (id: T["id"], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
+    /**
+     * Destroys multiple items for the current resource
+     * @param ids The ids of the items to destroy
+     * @param updateMethod The update method to be used
+     *  'on-success' will only remove the item in the frontend once the backend returns a successful response.
+     *  'immediate' will update the frontend immedately while also sending the request to the backend
+     *  'local-only' will only remove the item in the frontend
+     * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
+     * @returns A void promise that resolves once the request is complete.
+     */
+    batchDestroy: (ids: T["id"][], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
     /**
      * Extra data returned from the initial get request. Requires 'withExtra' option to be set to 'true'. See documentation
      * for this option for the expected response format
@@ -77,7 +107,7 @@ export interface ReturnSingle<RequestConfig, Error, T extends Resource, U = T> e
      *  'on-success' will only update the resource in the frontend once the backend returns a successful response.
      *      The frontend will be updated using the data from the backends response (which might be different from the data sent in the request)
      *  'immediate' will update the resource in the frontend immediately while also sending the request to the backend. The frontend will be updated using
-     *      only the data provided in the request, but a subsequent 'updated' event (socket only) may update the item again once the requests succeeeds
+     *      only the data provided in the request, but the response will update the item again once the requests succeeeds
      *  'local-only' will only update the frontend with the values provided, without sending any request to the backend
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
@@ -142,11 +172,11 @@ export interface OptionsSingle<T extends Resource, U> extends OptionsCommon<T, U
     /**
      * The id of the resource to be requested or 'single' if it is a [singleton resource]{@link https://www.example.com}
      */
-    id: T["id"] | "single" | null,
+    id: T["id"] | null,
 }
 
 export interface OptionsImplementation<T extends Resource, U> extends OptionsCommon<T, U> {
-    id?: T["id"] | "single" | null,
+    id?: T["id"] | null,
     onCreated?: OptionsList<T, U>["onCreated"],
     sorter?: OptionsList<T, U>["sorter"]
 }
@@ -169,12 +199,12 @@ export type ResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends 
     actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => ({
         store: (resource: any, config: RequestConfig | undefined) => MaybePromise<T>,
         batchStore: (resources: any[], config: RequestConfig | undefined) => MaybePromise<T[]>,
-        update: (id: Resource["id"] | "single", resource: any, config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>>,
+        update: (id: Resource["id"], resource: any, config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>>,
         batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
-        destroy: (id: Resource["id"] | "single", config: RequestConfig | undefined) => MaybePromise<void>,
+        destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
         batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
         refresh: <U = null>(config: RequestConfig | undefined) => MaybePromise<ResourceResponse<T, U, Error>>,
-        query: (data: any, config: RequestConfig | undefined) => MaybePromise<ResourceQueryResponse<T>>
+        query: (action: string, data: any, params?: Params, config?: RequestConfig) => MaybePromise<ResourceQueryResponse<T>>
     }),
     eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler?: (payload: T) => void, dependencies?: React.DependencyList) => void
 }
