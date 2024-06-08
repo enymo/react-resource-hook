@@ -252,7 +252,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         setError(null);
                         if (id !== null) {
                             setLoading(true);
-                            const response = await actions.refresh<V>(config);
+                            const response = await actions.refresh<V>(id, config);
                             setExtra(response.extra);
                             setState(response.data);
                             setError(response.error);

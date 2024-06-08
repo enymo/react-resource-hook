@@ -203,7 +203,7 @@ export type ResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends 
         batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
         destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
         batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
-        refresh: <U = null>(config: RequestConfig | undefined) => MaybePromise<ResourceResponse<T, U, Error>>,
+        refresh: <U = null>(id?: Resource["id"], config?: RequestConfig) => MaybePromise<ResourceResponse<T, U, Error>>,
         query: (action: string, data: any, params?: Params, config?: RequestConfig) => MaybePromise<ResourceQueryResponse<T>>
     }),
     eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler?: (payload: T) => void, dependencies?: React.DependencyList) => void
