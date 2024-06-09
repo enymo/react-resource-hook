@@ -29,9 +29,8 @@ function App() {
         </ResourceProvider>
     )
 }
-```
-*NOTE* If you're using ziggy-js for the route function: As of 06/12/2023, the typing for ziggy-js is incorrect, but it's implementation isn't. Because of this, ```route``` has to be cast to ```RouteFunction``` to be used with the resource hook.
 
+```
 You can then access resource in your components like this:
 ```
 import useResource from "@enymo/react-resource-hook";

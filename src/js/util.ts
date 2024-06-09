@@ -1,75 +1,15 @@
 import { DeepPartial } from "ts-essentials";
 
-export function filter<T extends object>(input: T): T {
-    return Object.fromEntries(Object.entries(input).filter(([,value]) => value !== undefined)) as T;
-}
-
-export const identity = (input: any) => input
-
-function isAtomic(input: any, reactNative: boolean) {
+function isAtomic(input: any) {
     return (
-        isFile(input, reactNative)
+        input instanceof File
         || input === null
         || typeof input !== "object"
     )
 }
 
-function isFile(input: any, reactNative: boolean) {
-    return (
-        input instanceof File
-        || (reactNative && "uri" in input && "name" in input && "type" in input)
-    )
-}
-
-export function objectNeedsFormDataConversion(input: any, reactNative: boolean): boolean {
-    if (isAtomic(input, reactNative)) {
-        return isFile(input, reactNative);
-    }
-    else {
-        for (const value of Array.isArray(input) ? input : Object.values(input)) {
-            if (objectNeedsFormDataConversion(value, reactNative)) {
-                return true;
-            }
-        }
-        return false;
-    }
-}
-
-function objectToFormDataRecursive(input: any, reactNative: boolean, fd: FormData, path: string) {
-    if (isAtomic(input, reactNative)) {
-        switch (input) {
-            case undefined:
-                break;
-            case null:
-                fd.append(path, "");
-                break;
-            case true:
-                fd.append(path, "1");
-                break;
-            case false:
-                fd.append(path, "0");
-                break;
-            default:
-                fd.append(path, input);
-        }
-    }
-    else {
-        for (const [key, value] of Array.isArray(input) ? input.entries() : Object.entries(input)) {
-            objectToFormDataRecursive(value, reactNative, fd, `${path}[${key}]`);
-        }
-    }
-}
-
-export function objectToFormData(input: object, reactNative: boolean) {
-    const fd = new FormData();
-    for (const [key, value] of Object.entries(input)) {
-        objectToFormDataRecursive(value, reactNative, fd, key);
-    }
-    return fd;
-}
-
 function isSubsetRecursive(a: any, b: any) {
-    if (isAtomic(a, false)) {
+    if (isAtomic(a)) {
         return a === b;
     }
     else {
@@ -83,27 +23,22 @@ function isSubsetRecursive(a: any, b: any) {
     }
 }
 
-function pruneUnchangedRecursive(input: any, comparison: any, reactNative: boolean, target: any, ignoreKeys: string[] = []) {
+function pruneUnchangedRecursive(input: any, comparison: any, target: any, ignoreKeys: string[] = []) {
     for (const [key, value] of Object.entries(input)) {
-        if (isAtomic(value, reactNative) || Array.isArray(value)) {
+        if (isAtomic(value) || Array.isArray(value)) {
             if (ignoreKeys.includes(key) || !isSubsetRecursive(value, comparison[key])) {
                 target[key] = value;
             }
         }
         else {
             target[key] = {};
-            pruneUnchangedRecursive(value, comparison[key], reactNative, target[key]);
+            pruneUnchangedRecursive(value, comparison[key], target[key]);
         }
     }
 }
 
-export function pruneUnchanged<T>(input: object, comparison: object, reactNative: boolean, ignoreKeys: string[] = []): DeepPartial<T> {
+export function pruneUnchanged<T>(input: object, comparison: object, ignoreKeys: string[] = []): DeepPartial<T> {
     const target = {}
-    pruneUnchangedRecursive(input, comparison, reactNative, target, ignoreKeys);
+    pruneUnchangedRecursive(input, comparison, target, ignoreKeys);
     return target as DeepPartial<T>;
-}
-
-export function randomString(length: number) {
-    const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    return Array<void>(length).fill().map(() => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
