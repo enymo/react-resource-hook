@@ -9,7 +9,7 @@ export type { OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params,
 export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter } : {
     adapter: ResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig, Error>
 }) {     
-    return <T extends Resource, U extends object = T, V = null, W extends boolean = false>(resource: string, {
+    return <T extends Resource, U extends object = T, V = null>(resource: string, {
         defaultUpdateMethod = "on-success",
         pruneUnchanged: pruneUnchangedConfig = false,
         ...config
