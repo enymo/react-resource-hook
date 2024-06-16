@@ -165,7 +165,7 @@ export interface OptionsList<T extends Resource, U> extends OptionsCommon<T, U> 
      * @param item The item that has been created (already transformed)
      */
     onCreated?: OnCreatedListener<T>,
-    sorter?(a: T, b: T): 1 | 0 | -1
+    sorter?(a: T, b: T): number
 }
 
 export interface OptionsSingle<T extends Resource, U> extends OptionsCommon<T, U> {
@@ -195,16 +195,18 @@ export interface ResourceQueryResponse<T extends Resource> {
     destroy: T["id"][]
 }
 
+export interface ActionHookReturn<RequestConfig, Error, T extends Resource> {
+    store: (resource: any, config: RequestConfig | undefined) => MaybePromise<T>,
+    batchStore: (resources: any[], config: RequestConfig | undefined) => MaybePromise<T[]>,
+    update: (id: Resource["id"], resource: any, config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>>,
+    batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
+    destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
+    batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
+    refresh: <U = null>(id?: Resource["id"], config?: RequestConfig) => MaybePromise<ResourceResponse<T, U, Error>>,
+    query: (action: string, data: any, params?: Params, config?: RequestConfig) => MaybePromise<ResourceQueryResponse<T>>
+}
+
 export type ResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error> = (resource: string, config: Partial<ResourceConfig>) => {
-    actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => ({
-        store: (resource: any, config: RequestConfig | undefined) => MaybePromise<T>,
-        batchStore: (resources: any[], config: RequestConfig | undefined) => MaybePromise<T[]>,
-        update: (id: Resource["id"], resource: any, config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>>,
-        batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
-        destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
-        batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
-        refresh: <U = null>(id?: Resource["id"], config?: RequestConfig) => MaybePromise<ResourceResponse<T, U, Error>>,
-        query: (action: string, data: any, params?: Params, config?: RequestConfig) => MaybePromise<ResourceQueryResponse<T>>
-    }),
+    actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => ActionHookReturn<RequestConfig, Error, T>,
     eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler?: (payload: T) => void, dependencies?: React.DependencyList) => void
 }
