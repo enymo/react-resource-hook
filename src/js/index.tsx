@@ -4,7 +4,7 @@ import { DeepPartial } from "ts-essentials";
 import { OnCreatedListener, OnDestroyedListener, OnUpdatedListener, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ResourceBackendAdapter, ReturnList, ReturnSingle, UpdateMethod } from "./types";
 import { pruneUnchanged } from "./util";
 
-export type { OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params, Resource, ResourceBackendAdapter, ResourceQueryResponse, ResourceResponse, ReturnList, ReturnSingle } from "./types";
+export type { ActionHookReturn, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params, Resource, ResourceBackendAdapter, ResourceQueryResponse, ResourceResponse, ReturnList, ReturnSingle } from "./types";
 
 export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter } : {
     adapter: ResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig, Error>
