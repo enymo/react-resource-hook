@@ -153,9 +153,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                 }
                 
                 const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" ? (async () => {
-                    return actions.update(id, update, config);
-                })() : null;
+                const promise = updateMethod !== "local-only" ? actions.update(id, update, config) : null;
                 if (updateMethod === "on-success") {
                     handleUpdated(await promise!);
                 }

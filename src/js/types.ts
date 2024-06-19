@@ -184,7 +184,7 @@ export interface OptionsImplementation<T extends Resource, U> extends OptionsCom
 export type MaybePromise<T> = Promise<T> | T
 
 export type ResourceResponse<T extends Resource, U, V> = {
-    data: T[],
+    data: T[] | T | null,
     extra: U,
     error: V | null
 }
