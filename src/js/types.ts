@@ -40,7 +40,7 @@ export interface ReturnCommon<RequestConfig, Error, T extends Resource, U> {
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves when the refresh is complete.
      */
-    refresh: (config?: RequestConfig) => Promise<void>,
+    refresh: (config?: RequestConfig, signal?: AbortSignal) => Promise<void>,
     /**
      * Send a generic query to the backend
      * @param data Any data to be sent to the backend.
@@ -202,7 +202,7 @@ export interface ActionHookReturn<RequestConfig, Error, T extends Resource> {
     batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
     destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
     batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
-    refresh: <U = null>(id?: Resource["id"], config?: RequestConfig) => MaybePromise<ResourceResponse<T, U, Error>>,
+    refresh: <U = null>(id?: Resource["id"], config?: RequestConfig, signal?: AbortSignal) => MaybePromise<ResourceResponse<T, U, Error>>,
     query: (action: string, data: any, params?: Params, config?: RequestConfig) => MaybePromise<ResourceQueryResponse<T>>
 }
 

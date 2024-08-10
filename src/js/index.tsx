@@ -244,7 +244,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                 }
             }, [actions.query, setState, handleCreated, handleDestroyed]);
 
-            const refresh = useCallback(async (config?: RequestConfig) => {
+            const refresh = useCallback(async (config?: RequestConfig, signal?: AbortSignal) => {
                 if (ignoreContext || !isNotNull(resourceContext)) {
                     try {
                         setError(null);
