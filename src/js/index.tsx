@@ -250,10 +250,17 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         setError(null);
                         if (id !== null) {
                             setLoading(true);
-                            const response = await actions.refresh<V>(id, config);
-                            setExtra(response.extra);
-                            setState(response.data);
-                            setError(response.error);
+                            try {
+                                const response = await actions.refresh<V>(id, config, signal);
+                                setExtra(response.extra);
+                                setState(response.data);
+                                setError(response.error);
+                            }
+                            catch (e) {
+                                if (!signal?.aborted) {
+                                    throw e;
+                                }
+                            }
                         }
                         else {
                             setState(id === undefined ? [] : null);
@@ -267,7 +274,9 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
         
             useEffect(() => {
                 if (autoRefresh) {
-                    refresh()   
+                    const abortController = new AbortController();
+                    refresh(undefined, abortController.signal);
+                    return () => abortController.abort();
                 }
             }, [refresh, autoRefresh, setError]);
     
