@@ -267,7 +267,9 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         }
                     }
                     finally {
-                        setLoading(false);
+                        if (!signal?.aborted) {
+                            setLoading(false);
+                        }
                     }
                 }
             }, [setState, id, setLoading, setError, ignoreContext, resourceContext, actions.refresh]);
