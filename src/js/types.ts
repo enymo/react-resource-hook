@@ -93,10 +93,9 @@ export interface ReturnList<RequestConfig, Error, T extends Resource, U, V> exte
      */
     batchDestroy: (ids: T["id"][], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
     /**
-     * Extra data returned from the initial get request. Requires 'withExtra' option to be set to 'true'. See documentation
-     * for this option for the expected response format
+     * Metadata returned from the initial get request.
      */
-    extra: V | null
+    meta: V | null
 }
 
 export interface ReturnSingle<RequestConfig, Error, T extends Resource, U = T> extends ReturnCommon<RequestConfig, Error, T, U> {
@@ -185,7 +184,7 @@ export type MaybePromise<T> = Promise<T> | T
 
 export type ResourceResponse<T extends Resource, U, V> = {
     data: T[] | T | null,
-    extra: U,
+    meta: U,
     error: V | null
 }
 

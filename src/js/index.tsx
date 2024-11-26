@@ -61,7 +61,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                 }
             }, [ignoreContext, resourceContext?.state, localState]);
             const sortedState = useMemo(() => (!isArray(state) || !sorter) ? state : [...state].sort(sorter), [state, sorter, isArray]);
-            const [extra, setExtra] = useState<V | null>(null);
+            const [meta, setMeta] = useState<V | null>(null);
             const [error, setError] = useState<Error | null>(null);
             const [loading, setLoading] = useState(autoRefresh);
         
@@ -252,7 +252,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                             setLoading(true);
                             try {
                                 const response = await actions.refresh<V>(id, config, signal);
-                                setExtra(response.extra);
+                                setMeta(response.meta);
                                 setState(response.data);
                                 setError(response.error);
                             }
@@ -310,11 +310,11 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         loading: resourceContext.actions.loading,
                         refresh: resourceContext.actions.refresh,
                         error: resourceContext.actions.error,
-                        extra: resourceContext.actions.extra,
+                        meta: resourceContext.actions.meta,
                         store: resourceContext.actions.store,
                         batchStore: resourceContext.actions.batchStore,
                         query: resourceContext.actions.query
-                    } : {loading, refresh, error, extra, store, batchStore, query}), 
+                    } : {loading, refresh, error, meta, store, batchStore, query}), 
                     ...(id !== undefined 
                         ? {update: updateSingle, destroy: destroySingle} 
                         : {update: updateList, destroy: destroyList, batchUpdate, batchDestroy})
