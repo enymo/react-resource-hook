@@ -130,7 +130,7 @@ export type UpdateMethod = "on-success" | "immediate" | "local-only";
 
 
 
-export type Param = string | number | boolean | undefined;
+export type Param = string | number | boolean | null | undefined;
 
 export type OnCreatedListener<T extends Resource> = (item: T) => void;
 export type OnUpdatedListener<T extends Resource> = (item: DeepPartial<T>) => void;
