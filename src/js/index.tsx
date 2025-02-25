@@ -75,10 +75,11 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
             }, [onCreated, setState]);
             const handleUpdated = useCallback((item: DeepPartial<T>) => {
                 if (onUpdated?.(item) ?? true) {
-                    setState(prev => isArray(prev) ? (prev.map(s => s.id == item.id ? {
+                    const {id, ...rest} = item;
+                    setState(prev => isArray(prev) ? (prev.map(s => s.id == id ? {
                         ...s,
-                        ...item
-                    } : s)) : {...prev, ...item} as T)
+                        ...rest
+                    } : s)) : {...prev, ...rest} as unknown as T)
                 }
             }, [onUpdated, setState]);
             const handleDestroyed = useCallback((delId: T["id"]) => {
