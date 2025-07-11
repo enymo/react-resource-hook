@@ -202,10 +202,35 @@ export interface ActionHookReturn<RequestConfig, Error, T extends Resource> {
     destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
     batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
     refresh: <U = null>(id?: Resource["id"], config?: RequestConfig, signal?: AbortSignal) => MaybePromise<ResourceResponse<T, U, Error>>,
-    query: (action: string, data: any, params?: Params, config?: RequestConfig) => MaybePromise<ResourceQueryResponse<T>>
+    query: (action: string, data: any, params?: Params, config?: RequestConfig) => MaybePromise<ResourceQueryResponse<T>>,
+    offline: boolean
+}
+
+export type Delta<T extends Resource> = {
+    action: "store",
+    id: T["id"],
+    resource: T
+} | {
+    action: "update",
+    id: T["id"],
+    update: DeepPartial<T>
+} | {
+    action: "destroy",
+    id: T["id"]
+};
+
+export interface DeltaActionHookReturn<RequestionConfig, Error, T extends Resource> extends ActionHookReturn<RequestionConfig, Error, T> {
+    writeDelta: (delta: Delta<T>) => MaybePromise<void>,
+    flushDelta: (id: T["id"]) => MaybePromise<void>,
+    deltas: Delta<T>[] | null
 }
 
 export type ResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error> = (resource: string, config: Partial<ResourceConfig>) => {
     actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => ActionHookReturn<RequestConfig, Error, T>,
-    eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler?: (payload: T) => void, dependencies?: React.DependencyList) => void
+    eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler: (payload: T) => void, enabled: boolean, dependencies?: React.DependencyList) => void
+}
+
+export type DeltaResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error> = (resource: string, config: Partial<ResourceConfig>) => {
+    actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => DeltaActionHookReturn<RequestConfig, Error, T>,
+    eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler: (payload: T) => void, enabled: boolean, dependencies?: React.DependencyList) => void
 }

@@ -7,12 +7,12 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
       "types": {
         "import": "./dist/index.d.mts",
         "require": "./dist/index.d.ts"
-      }
+      },
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
     }
   },
   "tsup": {
@@ -29,6 +29,7 @@
     "/dist"
   ],
   "scripts": {
+    "dev": "tsup --watch",
     "build": "tsup"
   },
   "repository": {
@@ -41,7 +42,6 @@
     "@types/pluralize": "^0.0.29",
     "@types/react": "^18.0.25",
     "postcss": "^8.4.17",
-    "ts-essentials": "^9.3.2",
     "tsup": "^8.0.2",
     "typescript": "^4.7.4"
   },
@@ -50,8 +50,10 @@
     "react": ">=17.0.0"
   },
   "dependencies": {
+    "@enymo/comparison": "^1.0.5",
     "@enymo/react-better-context": "^1.0.1",
     "@enymo/ts-nullsafe": "^1.0.0",
-    "pluralize": "^8.0.0"
+    "pluralize": "^8.0.0",
+    "ts-essentials": "^10.1.1"
   }
 }

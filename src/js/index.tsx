@@ -1,21 +1,39 @@
 import { isNotNull, requireNotNull } from "@enymo/ts-nullsafe";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DeepPartial } from "ts-essentials";
-import { OnCreatedListener, OnDestroyedListener, OnUpdatedListener, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ResourceBackendAdapter, ReturnList, ReturnSingle, UpdateMethod } from "./types";
+import { DeltaResourceBackendAdapter, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ResourceBackendAdapter, ReturnList, ReturnSingle, UpdateMethod } from "./types";
 import { pruneUnchanged } from "./util";
 
-export type { ActionHookReturn, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Params, Resource, ResourceBackendAdapter, ResourceQueryResponse, ResourceResponse, ReturnList, ReturnSingle } from "./types";
+export type {
+    ActionHookReturn, Delta, DeltaResourceBackendAdapter, OnCreatedListener,
+    OnDestroyedListener,
+    OnUpdatedListener,
+    Params,
+    Resource,
+    ResourceBackendAdapter, ResourceQueryResponse,
+    ResourceResponse,
+    ReturnList,
+    ReturnSingle
+} from "./types";
+export type { DeepPartial };
+export class OfflineError extends Error {}
+export class ConflictError extends Error {}
 
-export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter } : {
-    adapter: ResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig, Error>
+export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter, cache } : {
+    adapter: ResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig, Error>,
+    cache?: {
+        adapter: DeltaResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig, Error>
+    }
 }) {     
     return <T extends Resource, U extends object = T, V = null>(resource: string, {
         defaultUpdateMethod = "on-success",
         pruneUnchanged: pruneUnchangedConfig = false,
+        conflictResolver,
         ...config
     }: {
         defaultUpdateMethod?: UpdateMethod,
-        pruneUnchanged?: boolean
+        pruneUnchanged?: boolean,
+        conflictResolver?: (local: T | null, remote: T | null) => T | null
     } & Partial<ResourceConfig> = {}) => {
         const ResourceContext = createContext<{
             state: T[],
@@ -29,6 +47,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
         } | null>(null);
 
         const {actionHook: useActions, eventHook: useEvent} = adapter(resource, config as Partial<ResourceConfig>);
+        const cacheAdapter = cache?.adapter(resource, {});
     
         const useResource = (({
             id,
@@ -44,9 +63,18 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
             const isArray = useCallback((input: T | T[] | null): input is T[] => {
                 return id === undefined;
             }, [id]);
+
             const actions = useActions<T>(resourceConfig as Partial<UseConfig>, params);
+            const cacheActions = cacheAdapter?.actionHook({});
+
             const resourceContext = useContext(ResourceContext);
+
             const [localState, setState] = useState<T[] | T | null>(id === undefined ? [] : null);
+            const [conflicts, setConflicts] = useState<{
+                id: T["id"],
+                local: T | null,
+                remote: T | null
+            }[]>([]);
             const state = useMemo(() => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
                     if (id === undefined) {
@@ -61,9 +89,30 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                 }
             }, [ignoreContext, resourceContext?.state, localState]);
             const sortedState = useMemo(() => (!isArray(state) || !sorter) ? state : [...state].sort(sorter), [state, sorter, isArray]);
+
             const [meta, setMeta] = useState<V | null>(null);
             const [error, setError] = useState<Error | null>(null);
-            const [loading, setLoading] = useState(autoRefresh);
+            const [loadingState, setLoading] = useState(autoRefresh);
+            const loading = loadingState || (cacheActions && cacheActions.deltas === null);
+
+            const handleConflict = useCallback((local: T | null, remote: T | null) => {
+                const id = requireNotNull(local?.id ?? remote?.id, "local and remote must not both be null");
+                try {
+                    if (conflictResolver) {
+                        return conflictResolver(local, remote);
+                    }
+                    throw new ConflictError();
+                }
+                catch (e) {
+                    if (e instanceof ConflictError) {
+                        setConflicts(conflicts => conflicts.some(conflict => conflict.id === id)
+                            ? conflicts.map(conflict => conflict.id === id ? {id, local, remote} : conflict)
+                            : [...conflicts, {id, local, remote}]
+                        )
+                    }
+                    throw e;
+                }
+            }, [setConflicts]);
         
             const handleCreated = useCallback((item: T) => {
                 if (onCreated?.(item) ?? true) {
@@ -73,6 +122,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                     } : s) : [...prev as T[], item]);
                 }
             }, [onCreated, setState]);
+
             const handleUpdated = useCallback((item: DeepPartial<T>) => {
                 if (onUpdated?.(item) ?? true) {
                     const {id, ...rest} = item;
@@ -82,21 +132,34 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                     } : s)) : {...prev, ...rest} as unknown as T)
                 }
             }, [onUpdated, setState]);
+
             const handleDestroyed = useCallback((delId: T["id"]) => {
                 if (onDestroyed?.(delId) ?? true) {
-                    if (id !== undefined) {
-                        setState(null);
-                    }
-                    else {
-                        setState(prev => (prev as T[]).filter(s => s.id !== delId));
-                    }
+                    setState(prev => isArray(prev) ? prev.filter(s => s.id !== delId) : null);
                 }
-                
-            }, [onDestroyed, setState, id]);
+            }, [onDestroyed, setState]);
         
-            useEvent<T>(params, "created", ((ignoreContext || !isNotNull(resourceContext)) && id === undefined) ? (async item => !loading && handleCreated(item)) : undefined, [loading, handleCreated]);
-            useEvent<DeepPartial<T>>(params, "updated", (ignoreContext || !isNotNull(resourceContext)) ? (async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(item)) : undefined, [id, state, loading, handleUpdated]);
-            useEvent<T["id"]>(params, "destroyed", (ignoreContext || !isNotNull(resourceContext)) ? (delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId)) : undefined, [id, state, loading, handleDestroyed]);
+            useEvent<T>(
+                params,
+                "created", 
+                async item => !loading && handleCreated(item),
+                (ignoreContext || !isNotNull(resourceContext)) && id === undefined,
+                [loading, handleCreated]
+            );
+            useEvent<DeepPartial<T>>(
+                params,
+                "updated",
+                async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(item),
+                (ignoreContext || !isNotNull(resourceContext)) && !actions.offline && !cacheActions?.deltas,
+                [id, state, loading, handleUpdated]
+            );
+            useEvent<T["id"]>(
+                params,
+                "destroyed",
+                delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId),
+                (ignoreContext || !isNotNull(resourceContext)) && !actions.offline && !cacheActions?.deltas,
+                [id, state, loading, handleDestroyed]
+            );
         
             const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {            
                 const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
@@ -167,7 +230,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         handleUpdated(await promise!);
                     }
                 }
-            }, [state, resourceContext, ignoreContext, actions.update, state, handleUpdated]);
+            }, [state, resourceContext, ignoreContext, actions.update, handleUpdated]);
         
             const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 return updateList(requireNotNull(id), update, updateMethodOverride, config);
@@ -196,7 +259,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         }
                     }
                 }
-            }, [state, resourceContext, ignoreContext, actions.batchUpdate, state, handleUpdated]);
+            }, [state, resourceContext, ignoreContext, actions.batchUpdate, handleUpdated]);
         
             const destroyList = useCallback(async (id: T["id"], updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
@@ -253,6 +316,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                             setLoading(true);
                             try {
                                 const response = await actions.refresh<V>(id, config, signal);
+                                if (signal?.aborted) return;
                                 setMeta(response.meta);
                                 setState(response.data);
                                 setError(response.error);
@@ -273,7 +337,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         }
                     }
                 }
-            }, [setState, id, setLoading, setError, ignoreContext, resourceContext, actions.refresh]);
+            }, [setState, id, setLoading, setError, ignoreContext, resourceContext, actions.refresh, actions.offline]);
         
             useEffect(() => {
                 if (autoRefresh) {
@@ -281,7 +345,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                     refresh(undefined, abortController.signal);
                     return () => abortController.abort();
                 }
-            }, [refresh, autoRefresh, setError]);
+            }, [refresh, autoRefresh]);
     
             useEffect(() => {
                 if (isNotNull(onCreated) && !ignoreContext && isNotNull(resourceContext)) {
