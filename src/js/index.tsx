@@ -1,11 +1,11 @@
-import { isNotNull, requireNotNull } from "@enymo/ts-nullsafe";
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { assertNotNull, isNotNull, requireNotNull } from "@enymo/ts-nullsafe";
+import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DeepPartial } from "ts-essentials";
-import { DeltaResourceBackendAdapter, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ResourceBackendAdapter, ReturnList, ReturnSingle, UpdateMethod } from "./types";
-import { pruneUnchanged } from "./util";
+import { CacheResourceBackendAdapter, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Options, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ResourceBackendAdapter, ReturnList, ReturnSingle, UpdateMethod } from "./types";
+import { deepEquals, pruneUnchanged } from "./util";
 
 export type {
-    ActionHookReturn, Delta, DeltaResourceBackendAdapter, OnCreatedListener,
+    ActionHookReturn, CacheResourceBackendAdapter, Delta, OnCreatedListener,
     OnDestroyedListener,
     OnUpdatedListener,
     Params,
@@ -16,28 +16,40 @@ export type {
     ReturnSingle
 } from "./types";
 export type { DeepPartial };
-export class OfflineError extends Error {}
+export class OfflineError extends Error {
+    constructor(public originalError: Error, message?: string, options?: ErrorOptions) {
+        super(message, options);
+    }
+}
 export class ConflictError extends Error {}
 
-export default function createResourceFactory<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error>({ adapter, cache } : {
-    adapter: ResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig, Error>,
+export default function createResourceFactory<ResourceConfig extends {}, CacheResourceConfig extends {}, UseConfig extends {}, CacheUseConfig extends {}, RequestConfig, CacheRequestConfig>({ adapter, cache } : {
+    adapter: ResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig>,
     cache?: {
-        adapter: DeltaResourceBackendAdapter<ResourceConfig, UseConfig, RequestConfig, Error>
+        adapter: CacheResourceBackendAdapter<CacheResourceConfig, CacheUseConfig, CacheRequestConfig>,
+        equalityCallback?: (a: any, b: any) => boolean
     }
 }) {     
     return <T extends Resource, U extends object = T, V = null>(resource: string, {
         defaultUpdateMethod = "on-success",
         pruneUnchanged: pruneUnchangedConfig = false,
         conflictResolver,
+        uniqueIdentifierCallback = item => item.id.toString(),
+        cache: cacheConfig = {},
         ...config
     }: {
         defaultUpdateMethod?: UpdateMethod,
         pruneUnchanged?: boolean,
-        conflictResolver?: (local: T | null, remote: T | null) => T | null
+        conflictResolver?: (local: T | null, common: T | null, remote: T | null) => T | null,
+        uniqueIdentifierCallback?: (item: T) => string,
+        cache?: {
+            defaultEnabled?: boolean,
+            batchSync?: boolean,
+        } & Partial<CacheResourceConfig>
     } & Partial<ResourceConfig> = {}) => {
         const ResourceContext = createContext<{
             state: T[],
-            actions: ReturnList<RequestConfig, Error, T, U, V>,
+            actions: ReturnList<RequestConfig, CacheRequestConfig, T, U, V>,
             addCreatedListener(listener: OnCreatedListener<T>): void,
             removeCreatedListener(listener: OnCreatedListener<T>): void,
             addUpdatedListener(listener: OnUpdatedListener<T>): void,
@@ -47,7 +59,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
         } | null>(null);
 
         const {actionHook: useActions, eventHook: useEvent} = adapter(resource, config as Partial<ResourceConfig>);
-        const cacheAdapter = cache?.adapter(resource, {});
+        const cacheAdapter = cache?.adapter(resource, cacheConfig, true);
     
         const useResource = (({
             id,
@@ -65,16 +77,11 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
             }, [id]);
 
             const actions = useActions<T>(resourceConfig as Partial<UseConfig>, params);
-            const cacheActions = cacheAdapter?.actionHook({});
+            const cacheActions = cacheAdapter?.actionHook<T>({});
 
             const resourceContext = useContext(ResourceContext);
 
             const [localState, setState] = useState<T[] | T | null>(id === undefined ? [] : null);
-            const [conflicts, setConflicts] = useState<{
-                id: T["id"],
-                local: T | null,
-                remote: T | null
-            }[]>([]);
             const state = useMemo(() => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
                     if (id === undefined) {
@@ -92,30 +99,35 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
 
             const [meta, setMeta] = useState<V | null>(null);
             const [error, setError] = useState<Error | null>(null);
-            const [loadingState, setLoading] = useState(autoRefresh);
-            const loading = loadingState || (cacheActions && cacheActions.deltas === null);
+            const [loading, setLoading] = useState(autoRefresh);
 
-            const handleConflict = useCallback((local: T | null, remote: T | null) => {
-                const id = requireNotNull(local?.id ?? remote?.id, "local and remote must not both be null");
+            const handleConflict = useCallback((local: T | null, common: T | null, remote: T | null) => {
+                const id = uniqueIdentifierCallback(requireNotNull(local ?? remote, "local and remote must not both be null"));
                 try {
                     if (conflictResolver) {
-                        return conflictResolver(local, remote);
+                        return conflictResolver(local, common, remote);
                     }
                     throw new ConflictError();
                 }
                 catch (e) {
+                    throw e;
+                }
+                /* TODO: Implement manual conflict handling
+                catch (e) {
                     if (e instanceof ConflictError) {
                         setConflicts(conflicts => conflicts.some(conflict => conflict.id === id)
-                            ? conflicts.map(conflict => conflict.id === id ? {id, local, remote} : conflict)
-                            : [...conflicts, {id, local, remote}]
+                            ? conflicts.map(conflict => conflict.id === id ? {id, local, common, remote} : conflict)
+                            : [...conflicts, {id, local, common, remote}]
                         )
                     }
                     throw e;
                 }
-            }, [setConflicts]);
+                */
+            }, []);
         
             const handleCreated = useCallback((item: T) => {
                 if (onCreated?.(item) ?? true) {
+                    const id = uniqueIdentifierCallback(item);
                     setState(prev => ((prev as T[]).find(s => s.id == item.id)) ? (prev as T[]).map(s => s.id == item.id ? {
                         ...s,
                         ...item
@@ -146,24 +158,39 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                 (ignoreContext || !isNotNull(resourceContext)) && id === undefined,
                 [loading, handleCreated]
             );
-            useEvent<DeepPartial<T>>(
+            useEvent<DeepPartial<T> & Resource>(
                 params,
                 "updated",
                 async item => (!loading && (id === undefined || item.id === (state as T).id)) && handleUpdated(item),
-                (ignoreContext || !isNotNull(resourceContext)) && !actions.offline && !cacheActions?.deltas,
+                (ignoreContext || !isNotNull(resourceContext)),
                 [id, state, loading, handleUpdated]
             );
             useEvent<T["id"]>(
                 params,
                 "destroyed",
                 delId => !loading && (id === undefined || delId === (state as T).id) && handleDestroyed(delId),
-                (ignoreContext || !isNotNull(resourceContext)) && !actions.offline && !cacheActions?.deltas,
+                (ignoreContext || !isNotNull(resourceContext)),
                 [id, state, loading, handleDestroyed]
             );
         
-            const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {            
-                const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" ? actions.store(item, config) : null;
+            const store = useCallback(async (item: DeepPartial<U> = {} as DeepPartial<U>, options?: Options<RequestConfig, CacheRequestConfig>) => {            
+                const updateMethod = options?.updateMethod ?? defaultUpdateMethod;
+                const promise = updateMethod !== "local-only" ? (async () => {
+                    const cache = options?.cache?.enabled ?? cacheConfig.defaultEnabled ?? false;
+                    const cacheResult = cache && await cacheActions?.store(item, options?.cache?.config);
+                    try {
+                        const result = await actions.store(item, options?.config)
+                        cache && await cacheActions?.sync((item as Resource).id);
+                        return result;
+                    }
+                    catch (e) {
+                        if (e instanceof OfflineError) {
+                            if (!cacheResult) throw e.originalError;
+                            return cacheResult;
+                        }
+                        throw e;
+                    }
+                })() : null;
                 if (updateMethod === "on-success" || id !== undefined) {
                     const result = await promise!;
                     if (id === undefined) {
@@ -180,11 +207,26 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                     }
                     return item;
                 }
-            }, [actions.store, setState, handleCreated]);
+            }, [actions.store, cacheActions?.store, setState, handleCreated]);
 
-            const batchStore = useCallback(async (items: DeepPartial<U>[], updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
-                const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" ? actions.batchStore(items, config) : null;
+            const batchStore = useCallback(async (items: DeepPartial<U>[], options?: Options<RequestConfig, CacheRequestConfig>) => {
+                const updateMethod = options?.updateMethod ?? defaultUpdateMethod;
+                const promise = updateMethod !== "local-only" ? (async () => {
+                    const cache = options?.cache?.enabled ?? cacheConfig.defaultEnabled ?? false;
+                    const cacheResult = cache && await cacheActions?.batchStore(items, options?.cache?.config);
+                    try {
+                        const result = await actions.batchStore(items, options?.config);
+                        cache && await cacheActions?.sync(...items.map(item => (item as Resource).id));
+                        return result;
+                    }
+                    catch (e) {
+                        if (e instanceof OfflineError) {
+                            if (!cacheResult) throw e.originalError;
+                            return cacheResult;
+                        }
+                        throw e;
+                    }                    
+                })() : null;
                 if (updateMethod === "on-success" || id !== undefined) {
                     const result = await promise!;
                     if (id === undefined) {
@@ -208,16 +250,32 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                     }
                     return items;
                 }
-            }, [actions.batchStore, setState, handleCreated]);
+            }, [actions.batchStore, cacheActions?.batchStore, setState, handleCreated]);
         
-            const updateList = useCallback(async (id: T["id"], update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
+            const updateList = useCallback(async (id: T["id"], update: DeepPartial<U>, options?: Options<RequestConfig, CacheRequestConfig>) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
-                    const comparison = pruneUnchangedConfig ? isArray(state) ? state.find(item => item.id === id) ?? null : state : null;
-                    return resourceContext.actions.update(id, comparison ? pruneUnchanged(update, comparison) : update, updateMethodOverride, config);
+                    return resourceContext.actions.update(id, update, options);
                 }
                 
-                const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" ? actions.update(id, update, config) : null;
+                const comparison = pruneUnchangedConfig ? isArray(state) ? state.find(item => item.id === id) ?? null : state : null;
+                const pruned = comparison ? pruneUnchanged(update, comparison) : update;
+                const updateMethod = options?.updateMethod ?? defaultUpdateMethod;
+                const promise = updateMethod !== "local-only" ? (async () => {
+                    const cache = options?.cache?.enabled ?? cacheConfig.defaultEnabled ?? false;
+                    const cacheResult = cache && await cacheActions?.update(id, pruned, options?.cache?.config);
+                    try {
+                        const result = await actions.update(id, pruned, options?.config);
+                        cache && await cacheActions?.sync(id);
+                        return result;
+                    }
+                    catch (e) {
+                        if (e instanceof OfflineError) {
+                            if (!cacheResult) throw e.originalError;
+                            return cacheResult;
+                        }
+                        throw e;
+                    }
+                })() : null;
                 if (updateMethod === "on-success") {
                     handleUpdated(await promise!);
                 }
@@ -230,22 +288,38 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         handleUpdated(await promise!);
                     }
                 }
-            }, [state, resourceContext, ignoreContext, actions.update, handleUpdated]);
+            }, [state, resourceContext, ignoreContext, actions.update, cacheActions?.update, handleUpdated]);
         
-            const updateSingle = useCallback((update: DeepPartial<U>, updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
-                return updateList(requireNotNull(id), update, updateMethodOverride, config);
+            const updateSingle = useCallback((update: DeepPartial<U>, options?: Options<RequestConfig, CacheRequestConfig>) => {
+                return updateList(requireNotNull(id), update, options);
             }, [id, updateList]);
     
-            const batchUpdate = useCallback(async (update: (DeepPartial<U> & {id: T["id"]})[], updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
+            const batchUpdate = useCallback(async (update: (DeepPartial<U> & {id: T["id"]})[], options?: Options<RequestConfig, CacheRequestConfig>) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
-                    return resourceContext.actions.batchUpdate(update, updateMethodOverride, config);
+                    return resourceContext.actions.batchUpdate(update, options);
                 }
                 
-                const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" ? actions.batchUpdate(update.map(update => {
-                    const comparison = pruneUnchangedConfig ? (state as T[]).find(item => item.id === update.id) : undefined;
-                    return (comparison ? pruneUnchanged(update, comparison, ["id"]) : update) as DeepPartial<T>;
-                }).filter(update => Object.keys(update).length > 1), config) : null;
+                const updateMethod = options?.updateMethod ?? defaultUpdateMethod;
+                const promise = updateMethod !== "local-only" ? (async () => {
+                    const pruned = update.map(update => {
+                        const comparison = pruneUnchangedConfig ? (state as T[]).find(item => item.id === update.id) : undefined;
+                        return (comparison ? pruneUnchanged(update, comparison, ["id"]) : update) as DeepPartial<T> & Resource;
+                    }).filter(update => Object.keys(update).length > 1);
+                    const cache = options?.cache?.enabled ?? cacheConfig.defaultEnabled ?? false;
+                    const cacheResult = cache && cacheActions?.batchUpdate(pruned, options?.cache?.config);
+                    try {
+                        const result = actions.batchUpdate(pruned, options?.config);
+                        cache && cacheActions?.sync(...pruned.map(item => item.id));
+                        return result;
+                    }
+                    catch (e) {
+                        if (e instanceof OfflineError) {
+                            if (!cacheResult) throw e.originalError;
+                            return cacheResult;
+                        }
+                        throw e;
+                    }
+                })() : null;
                 if (updateMethod === "on-success") {
                     (await promise!).map(update => handleUpdated(update));
                 }
@@ -259,31 +333,59 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         }
                     }
                 }
-            }, [state, resourceContext, ignoreContext, actions.batchUpdate, handleUpdated]);
+            }, [state, resourceContext, ignoreContext, actions.batchUpdate, cacheActions?.batchUpdate, handleUpdated]);
         
-            const destroyList = useCallback(async (id: T["id"], updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
+            const destroyList = useCallback(async (id: T["id"], options?: Options<RequestConfig, CacheRequestConfig>) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
-                    return resourceContext.actions.destroy(id, updateMethodOverride, config);
+                    return resourceContext.actions.destroy(id, options);
                 }
     
-                const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" && actions.destroy(id, config);
+                const updateMethod = options?.updateMethod ?? defaultUpdateMethod;
+                const promise = updateMethod !== "local-only" && (async () => {
+                    const cache = options?.cache?.enabled ?? cacheConfig.defaultEnabled ?? false;
+                    cache && cacheActions?.destroy(id, options?.cache?.config);
+                    try {
+                        actions.destroy(id, options?.config);
+                        cache && cacheActions?.sync(id);
+                    }
+                    catch (e) {
+                        if (e instanceof OfflineError) {
+                            if (!cache || !cacheActions) throw e.originalError;
+                            return;
+                        }
+                        throw e;
+                    }
+                })();
                 if (updateMethod !== "immediate") {
                     await promise;
                 }
                 handleDestroyed(id);
                 return promise;
-            }, [resourceContext, ignoreContext, actions.destroy, handleDestroyed]);
+            }, [resourceContext, ignoreContext, actions.destroy, cacheActions?.destroy, handleDestroyed]);
         
-            const destroySingle = useCallback((updateMethodOverride?: UpdateMethod, config?: RequestConfig) => destroyList(requireNotNull(id), updateMethodOverride, config), [destroyList, id]);
+            const destroySingle = useCallback((options?: Options<RequestConfig, CacheRequestConfig>) => destroyList(requireNotNull(id), options), [destroyList, id]);
 
-            const batchDestroy = useCallback(async (ids: number[], updateMethodOverride?: UpdateMethod, config?: RequestConfig) => {
+            const batchDestroy = useCallback(async (ids: number[], options?: Options<RequestConfig, CacheRequestConfig>) => {
                 if (!ignoreContext && isNotNull(resourceContext)) {
-                    return resourceContext.actions.batchDestroy(ids, updateMethodOverride, config);
+                    return resourceContext.actions.batchDestroy(ids, options);
                 }
 
-                const updateMethod = updateMethodOverride ?? defaultUpdateMethod;
-                const promise = updateMethod !== "local-only" && actions.batchDestroy(ids, config);
+                const updateMethod = options?.updateMethod ?? defaultUpdateMethod;
+                const promise = updateMethod !== "local-only" && (async () => {
+                    const cache = options?.cache?.enabled ?? cacheConfig.defaultEnabled ?? false;
+                    cache && cacheActions?.batchDestroy(ids, options?.cache?.config);
+                    try {
+                        actions.batchDestroy(ids, options?.config);
+                        cache && cacheActions?.sync(...ids);
+                    }
+                    catch (e) {
+                        if (e instanceof OfflineError) {
+                            if (!cache || !cacheActions) throw e.originalError;
+                            return;
+                        }
+                        throw e;
+                    }
+                })();
                 if (updateMethod !== "immediate") {
                     await promise;
                 }
@@ -291,7 +393,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                     handleDestroyed(id);
                 }
                 return promise;
-            }, [ignoreContext, resourceContext, actions.batchDestroy, handleDestroyed]);
+            }, [ignoreContext, resourceContext, actions.batchDestroy, cacheActions?.batchDestroy, handleDestroyed]);
         
             const query = useCallback(async (action: string, data: any, params?: Params, config?: RequestConfig) => {
                 const response = await actions.query(action, data, params, config);
@@ -315,8 +417,192 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         if (id !== null) {
                             setLoading(true);
                             try {
-                                const response = await actions.refresh<V>(id, config, signal);
+                                const response = await (async () => {
+                                    try {
+                                        const response = await actions.refresh<V>(id, config, signal);
+
+                                        if (cacheActions?.getCache && Array.isArray(response.data)) {
+                                            const cache = await cacheActions.getCache();
+                                            const map = new Map(response.data.map(item => [uniqueIdentifierCallback(item), item]));
+                                            const mapIds = new Set(map.keys());
+                                            const syncIds = new Set<T["id"]>();
+                                            
+                                            const remoteStore: T[] = [];
+                                            const remoteUpdate: T[] = [];
+                                            const remoteDestroy: T["id"][] = [];
+
+                                            const localStore: T[] = [];
+                                            const localUpdate: T[] = [];
+                                            const localDestroy: T["id"][] = [];
+
+                                            for (const entry of cache) {
+                                                const id = uniqueIdentifierCallback(entry.remote ?? entry.local!);
+                                                // Remove any id present in changes so we can later see which remote entries are new
+                                                mapIds.delete(id);
+                                                const remote = map.get(id) ?? null;
+                                                if (entry.remote !== undefined) {
+                                                    // Local entry was created / updated / destroyed since last sync
+                                                    if (
+                                                        deepEquals(entry.remote, remote) // Also returns true if both entry.remote and remote are null
+                                                    ) {
+                                                        // Remote entry was not changed since last sync. Local entry has precendence
+
+                                                        if (entry.remote === null) {
+                                                            // Remote entry does not exist. Store local entry on remote
+                                                            assertNotNull(entry.local, "Cache error! Local and remote must not both be null!")
+                                                            remoteStore.push(entry.local);
+                                                            map.set(id, entry.local);
+                                                        }
+                                                        else if (entry.local === null) {
+                                                            // Local entry was destroyed. Destroy on remote
+                                                            remoteDestroy.push(entry.remote.id);
+                                                            map.delete(id);
+                                                        }
+                                                        else {
+                                                            // Local entry was updated. Update on remote
+                                                            remoteUpdate.push(entry.local);
+                                                            map.set(id, entry.local);
+                                                        }
+                                                    }
+                                                    else {
+                                                        // Both local and remote entries were changed. Conflict!
+                                                        try {
+                                                            // Try automatic conflict handling
+                                                            const resolution = handleConflict(entry.local, entry.remote, remote);
+                                                            
+                                                            // Resolution found. Sync with both local and remote
+                                                            if (resolution === null) {
+                                                                // Resolution is to delete the item
+
+                                                                if (remote !== null) {
+                                                                    // Exists on remote. Destroy it
+                                                                    remoteDestroy.push(remote.id);
+                                                                    map.delete(id);
+                                                                }
+                                                                if (entry.local !== null) {
+                                                                    // Exists locally. Destroy it
+                                                                    localDestroy.push(entry.local.id);
+                                                                }
+                                                            }
+                                                            else {
+                                                                const resolutionId = uniqueIdentifierCallback(resolution);
+                                                                if (remote === null) {
+                                                                    // Does not exist on remote. Store it
+                                                                    remoteStore.push(resolution);
+                                                                    map.set(resolutionId, resolution);
+                                                                }
+                                                                else if (remote.id !== resolution.id) {
+                                                                    // Id has changed. Destroy then store
+                                                                    remoteDestroy.push(remote.id);
+                                                                    remoteStore.push(resolution);
+                                                                    map.delete(id);
+                                                                    map.set(resolutionId, resolution);
+                                                                }
+                                                                else {
+                                                                    // Exists on remote. Update it
+                                                                    remoteUpdate.push(resolution);
+                                                                    map.set(id, resolution);
+                                                                }
+
+                                                                if (entry.local === null) {
+                                                                    // Does not exist locally. Store it
+                                                                    localStore.push(resolution);
+                                                                }
+                                                                else if (entry.local.id !== resolution.id) {
+                                                                    // Id has changed. Destroy then store
+                                                                    localDestroy.push(entry.local.id)
+                                                                    localStore.push(resolution)
+                                                                }
+                                                                else {
+                                                                    // Exists locally. Update it
+                                                                    localUpdate.push(resolution);
+                                                                }
+                                                            }
+                                                        }
+                                                        catch (e) {
+                                                            if (e instanceof ConflictError) {
+                                                                // Conflict resolution has failed! Skip item
+                                                                continue;
+                                                            }
+                                                        }
+                                                    }
+                                                    // If we get to here, sync has been handled successfully. Item will be marked as synced after write is done
+                                                    syncIds.add(entry.remote?.id ?? entry.local!.id);
+                                                }
+                                                else if (!deepEquals(remote, entry.local)) {
+                                                    // Local item has not changed, but remote has. Remote item has precendece
+                                                    if (remote === null) {
+                                                        // Item destroyed remotely. Destroy locally
+                                                        localDestroy.push(entry.local!.id);
+                                                    }
+                                                    else {
+                                                        // Item updated remotely. Update locally
+                                                        localUpdate.push(remote);
+                                                    }
+                                                }
+                                            }
+
+                                            // Apply all newly created remote items locally
+                                            for (const id of mapIds.values()) {
+                                                const remote = map.get(id)!;
+                                                localStore.push(remote);
+                                            }
+
+                                            // Everything has been resolved. Now dispatch all write actions to both remote and local storage
+                                            if (cacheConfig.batchSync) {
+                                                await Promise.all([
+                                                    remoteStore.length > 0 && actions.batchStore(remoteStore, config),
+                                                    remoteUpdate.length > 0 && actions.batchUpdate(remoteUpdate, config),
+                                                    remoteDestroy.length > 0 && actions.batchDestroy(remoteDestroy, config),
+                                                    localStore.length > 0 && cacheActions.batchStore(localStore, undefined),
+                                                    localUpdate.length > 0 && cacheActions.batchUpdate(localUpdate, undefined),
+                                                    localDestroy.length > 0 && cacheActions.batchDestroy(localDestroy, undefined)
+                                                ]);
+                                            }
+                                            else {
+                                                await Promise.all([
+                                                    ...remoteStore.map(item => actions.store(item, config)),
+                                                    ...remoteUpdate.map(({id, ...item}) => actions.update(id, item, config)),
+                                                    ...remoteDestroy.map(id => actions.destroy(id, config)),
+                                                    ...localStore.map(item => cacheActions.store(item, undefined)),
+                                                    ...localUpdate.map(({id, ...item}) => cacheActions.update(id, item, undefined)),
+                                                    ...localDestroy.map(id => cacheActions.destroy(id, undefined))
+                                                ])
+                                            }
+
+                                            for (const item of localStore) {
+                                                syncIds.add(item.id);
+                                            }
+                                            for (const item of localUpdate) {
+                                                syncIds.add(item.id);
+                                            }
+                                            for (const id of localDestroy) {
+                                                syncIds.add(id);
+                                            }
+
+                                            await cacheActions.sync(...syncIds);
+
+                                            return {
+                                                ...response,
+                                                data: [...map.values()]
+                                            }
+                                        }
+
+                                        return response;
+                                    }
+                                    catch (e) {
+                                        if (e instanceof OfflineError) {
+                                            return (await cacheActions?.refresh(id, undefined, signal)) ?? {
+                                                data: null,
+                                                error: e.originalError,
+                                                meta: null
+                                            }
+                                        }
+                                        throw e;
+                                    }
+                                })();
                                 if (signal?.aborted) return;
+
                                 setMeta(response.meta);
                                 setState(response.data);
                                 setError(response.error);
@@ -337,7 +623,7 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                         }
                     }
                 }
-            }, [setState, id, setLoading, setError, ignoreContext, resourceContext, actions.refresh, actions.offline]);
+            }, [setState, id, setLoading, setError, ignoreContext, resourceContext, actions.refresh]);
         
             useEffect(() => {
                 if (autoRefresh) {
@@ -346,6 +632,16 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                     return () => abortController.abort();
                 }
             }, [refresh, autoRefresh]);
+
+            useEffect(() => {
+                if (ignoreContext || !resourceContext) {
+                    return actions.addOfflineListener(offline => {
+                        if (!offline) {
+                            refresh();
+                        }
+                    })
+                }
+            }, [actions.addOfflineListener, refresh]);
     
             useEffect(() => {
                 if (isNotNull(onCreated) && !ignoreContext && isNotNull(resourceContext)) {
@@ -386,13 +682,13 @@ export default function createResourceFactory<ResourceConfig extends {}, UseConf
                 }
             ];
         }) as {
-            (options?: OptionsList<T, U>): [T[], ReturnList<RequestConfig, Error, T, U, V>],
-            (options:  OptionsSingle<T, U>): [T | null, ReturnSingle<RequestConfig, Error, T, U>]
+            (options?: OptionsList<T, U>): [T[], ReturnList<RequestConfig, CacheRequestConfig, T, U, V>],
+            (options:  OptionsSingle<T, U>): [T | null, ReturnSingle<RequestConfig, CacheRequestConfig, T, U>]
         }
     
         const ResourceProvider = ({params, children}: {
             params?: Params,
-            children: React.ReactNode
+            children: ReactNode
         }) => {
             const createdListeners = useRef(new Set<OnCreatedListener<T>>());
             const updatedListeners = useRef(new Set<OnUpdatedListener<T>>());

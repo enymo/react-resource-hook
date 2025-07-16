@@ -10,22 +10,32 @@ function isAtomic(input: any) {
     )
 }
 
-function isSubsetRecursive(a: any, b: any) {
-    if (isAtomic(a)) {
-        return a === b;
+export function deepEquals(a: any, b: any, equalityCallback: (a: any, b: any) => boolean = (a, b) => a === b) {
+    if (isAtomic(a) && isAtomic(b)) {
+        return equalityCallback(a, b);
     }
-    else {
+    else if (!isAtomic(a) && !isAtomic(b) && Array.isArray(a) === Array.isArray(b)) {
+        const keys = new Set<string | number>();
         for (const [key, value] of Array.isArray(a) ? a.entries() : Object.entries(a)) {
-            if (!isSubsetRecursive(value, b[key])) return false;
+            keys.add(key);
+            if (!deepEquals(value, b[key])) return false;
+        }
+        for (const [key, value] of Array.isArray(b) ? b.entries() : Object.entries(b)) {
+            if (!keys.has(key)) {
+                if (!deepEquals(value, a[key])) return false;
+            }
         }
         return true;
+    }
+    else {
+        return false;
     }
 }
 
 function pruneUnchangedRecursive(input: any, comparison: any, target: any, ignoreKeys: string[] = []) {
     for (const [key, value] of Object.entries(input)) {
         if (isAtomic(value) || Array.isArray(value)) {
-            if (ignoreKeys.includes(key) || !isSubsetRecursive(value, comparison[key])) {
+            if (ignoreKeys.includes(key) || !deepEquals(value, comparison[key])) {
                 target[key] = value;
             }
         }
@@ -83,6 +93,35 @@ export function resolveDeltas<T extends Resource, U extends T | T[]>(input: U, .
     }
 }
 
+export function findChangedPathsRecursive(a: any, b: any): string[] {
+    const result: string[] = [];
+    const keys = new Set<string | number>();
+    for (const [key, value] of Array.isArray(a) ? a.entries() : Object.entries(a)) {
+        keys.add(key);
+        if (isAtomic(value) || isAtomic(b[key]) || Array.isArray(value) !== Array.isArray(b[key])) {
+            if (value !== b[key]) {
+                result.push(key.toString());
+            }
+        }
+        else {
+            result.push(...findChangedPathsRecursive(value, b[key]).map(path => `${key}.${path}`));
+        }
+    }
+    for (const [key, value] of Array.isArray(b) ? b.entries() : Object.entries(b)) {
+        if (!keys.has(key)) {
+            if (isAtomic(value) || isAtomic(a[key]) || Array.isArray(value) !== Array.isArray(b[key])) {
+                if (value !== a[key]) {
+                    result.push(key.toString());
+                }
+            }
+            else {
+                result.push(...findChangedPathsRecursive(value, a[key]).map(path => `${key}.${path}`));
+            }
+        }
+    }
+    return result;
+}
+
 export function diff<T extends Resource>(local: T[], remote: T[]) {
     const sortedLocal = [...local].sort((a, b) => compare(a.id, b.id));
     const sortedRemote = [...remote].sort((a, b) => compare(a.id, b.id));
@@ -104,7 +143,7 @@ export function diff<T extends Resource>(local: T[], remote: T[]) {
             j++;
         }
         else {
-            if (!isSubsetRecursive(sortedLocal[i], sortedRemote[j])) {
+            if (!deepEquals(sortedLocal[i], sortedRemote[j])) {
                 updated.push(sortedRemote[j]);
             }
             i++;

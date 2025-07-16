@@ -1,10 +1,25 @@
 import type { DeepPartial } from "ts-essentials";
 
 export interface Resource {
-    id?: string | number
+    id: string | number
 }
 
-export interface ReturnCommon<RequestConfig, Error, T extends Resource, U> {
+export interface Options<RequestConfig, CacheRequestConfig> {
+    updateMethod?: UpdateMethod,
+    config?: RequestConfig,
+    cache?: {
+        enabled?: boolean,
+        config?: CacheRequestConfig
+    }
+}
+
+export interface Conflict<T extends Resource> {
+    id: string,
+    local: T | null,
+    common: T | null,
+    remote: T | null
+}
+export interface ReturnCommon<RequestConfig, CacheRequestConfig, T extends Resource, U> {
     /**
      * Whether the current resource is still being fetched after initial render or parameter change
      */
@@ -21,7 +36,7 @@ export interface ReturnCommon<RequestConfig, Error, T extends Resource, U> {
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns The created resource.
      */
-    store: (item?: DeepPartial<U>, updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<T>,
+    store: (item?: DeepPartial<U>, options?: Options<RequestConfig, CacheRequestConfig>) => Promise<T>,
     /**
      * Stores several items in the current resource
      * @param items An array of items to be stored
@@ -34,7 +49,7 @@ export interface ReturnCommon<RequestConfig, Error, T extends Resource, U> {
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns The created resources as an array
      */
-    batchStore: (items: DeepPartial<U>[], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<T[]>
+    batchStore: (items: DeepPartial<U>[], options?: Options<RequestConfig, CacheRequestConfig>) => Promise<T[]>
     /**
      * Fully refreshed the resource by sending the initial get request again.
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
@@ -54,7 +69,7 @@ export interface ReturnCommon<RequestConfig, Error, T extends Resource, U> {
     error: Error | null
 }
 
-export interface ReturnList<RequestConfig, Error, T extends Resource, U, V> extends ReturnCommon<RequestConfig, Error, T, U> {
+export interface ReturnList<RequestConfig, CacheRequestConfig, T extends Resource, U, V> extends ReturnCommon<RequestConfig, CacheRequestConfig, T, U> {
     /**
      * Updates an existing item for the current resource
      * @param id The id of the item to update
@@ -68,8 +83,8 @@ export interface ReturnList<RequestConfig, Error, T extends Resource, U, V> exte
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves once the request is complete.
      */
-    update: (id: T["id"], update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
-    batchUpdate: (update: (DeepPartial<U> & {id: T["id"]})[], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
+    update: (id: T["id"], update: DeepPartial<U>, options?: Options<RequestConfig, CacheRequestConfig>) => Promise<void>,
+    batchUpdate: (update: (DeepPartial<U> & {id: T["id"]})[], options?: Options<RequestConfig, CacheRequestConfig>) => Promise<void>,
     /**
      * Destroys an item for the current resource
      * @param id The id of the item to destroy
@@ -80,7 +95,7 @@ export interface ReturnList<RequestConfig, Error, T extends Resource, U, V> exte
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves once the request is complete.
      */
-    destroy: (id: T["id"], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
+    destroy: (id: T["id"], options?: Options<RequestConfig, CacheRequestConfig>) => Promise<void>,
     /**
      * Destroys multiple items for the current resource
      * @param ids The ids of the items to destroy
@@ -91,14 +106,14 @@ export interface ReturnList<RequestConfig, Error, T extends Resource, U, V> exte
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves once the request is complete.
      */
-    batchDestroy: (ids: T["id"][], updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
+    batchDestroy: (ids: T["id"][], options?: Options<RequestConfig, CacheRequestConfig>) => Promise<void>,
     /**
      * Metadata returned from the initial get request.
      */
     meta: V | null
 }
 
-export interface ReturnSingle<RequestConfig, Error, T extends Resource, U = T> extends ReturnCommon<RequestConfig, Error, T, U> {
+export interface ReturnSingle<RequestConfig, CacheRequestConfig, T extends Resource, U = T> extends ReturnCommon<RequestConfig, CacheRequestConfig, T, U> {
     /**
      * Updates the current item
      * @param update Partial item. Omitted fields will be considered unchanged.
@@ -111,7 +126,7 @@ export interface ReturnSingle<RequestConfig, Error, T extends Resource, U = T> e
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    update: (update: DeepPartial<U>, updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>,
+    update: (update: DeepPartial<U>, options?: Options<RequestConfig, CacheRequestConfig>) => Promise<void>,
     /**
      * Destroys the current item
      * @param updateMethod The update method to be used
@@ -121,7 +136,7 @@ export interface ReturnSingle<RequestConfig, Error, T extends Resource, U = T> e
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves once an 'on-success' request is complete or immediately otherwise
      */
-    destroy: (updateMethod?: UpdateMethod, config?: RequestConfig) => Promise<void>
+    destroy: (options?: Options<RequestConfig, CacheRequestConfig>) => Promise<void>
 }
 
 export type Params = {[param: string]: Param | Param[] | Params}
@@ -182,10 +197,10 @@ export interface OptionsImplementation<T extends Resource, U> extends OptionsCom
 
 export type MaybePromise<T> = Promise<T> | T
 
-export type ResourceResponse<T extends Resource, U, V> = {
+export type ResourceResponse<T extends Resource, U> = {
     data: T[] | T | null,
     meta: U,
-    error: V | null
+    error: Error | null
 }
 
 export interface ResourceQueryResponse<T extends Resource> {
@@ -194,16 +209,25 @@ export interface ResourceQueryResponse<T extends Resource> {
     destroy: T["id"][]
 }
 
-export interface ActionHookReturn<RequestConfig, Error, T extends Resource> {
+export interface ActionHookReturn<RequestConfig, T extends Resource> {
     store: (resource: any, config: RequestConfig | undefined) => MaybePromise<T>,
     batchStore: (resources: any[], config: RequestConfig | undefined) => MaybePromise<T[]>,
     update: (id: Resource["id"], resource: any, config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>>,
     batchUpdate: (resources: any[], config: RequestConfig | undefined) => MaybePromise<DeepPartial<T>[]>,
     destroy: (id: Resource["id"], config: RequestConfig | undefined) => MaybePromise<void>,
     batchDestroy: (ids: Resource["id"][], config: RequestConfig | undefined) => MaybePromise<void>,
-    refresh: <U = null>(id?: Resource["id"], config?: RequestConfig, signal?: AbortSignal) => MaybePromise<ResourceResponse<T, U, Error>>,
+    refresh: <U = null>(id?: Resource["id"], config?: RequestConfig, signal?: AbortSignal) => MaybePromise<ResourceResponse<T, U>>,
     query: (action: string, data: any, params?: Params, config?: RequestConfig) => MaybePromise<ResourceQueryResponse<T>>,
-    offline: boolean
+    addOfflineListener: (listener: (offline: boolean) => void) => () => void
+}
+
+export interface CacheActionHookReturn<RequestConfig, T extends Resource> extends ActionHookReturn<RequestConfig, T> {
+    sync: (...ids: Resource["id"][]) => MaybePromise<void>,
+    getCache: () => MaybePromise<{
+        id: T["id"],
+        remote?: T | null,
+        local: T | null
+    }[]>
 }
 
 export type Delta<T extends Resource> = {
@@ -219,18 +243,12 @@ export type Delta<T extends Resource> = {
     id: T["id"]
 };
 
-export interface DeltaActionHookReturn<RequestionConfig, Error, T extends Resource> extends ActionHookReturn<RequestionConfig, Error, T> {
-    writeDelta: (delta: Delta<T>) => MaybePromise<void>,
-    flushDelta: (id: T["id"]) => MaybePromise<void>,
-    deltas: Delta<T>[] | null
-}
-
-export type ResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error> = (resource: string, config: Partial<ResourceConfig>) => {
-    actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => ActionHookReturn<RequestConfig, Error, T>,
+export type ResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends {}, RequestConfig> = (resource: string, config: Partial<ResourceConfig>) => {
+    actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => ActionHookReturn<RequestConfig, T>,
     eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler: (payload: T) => void, enabled: boolean, dependencies?: React.DependencyList) => void
 }
 
-export type DeltaResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends {}, RequestConfig, Error> = (resource: string, config: Partial<ResourceConfig>) => {
-    actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => DeltaActionHookReturn<RequestConfig, Error, T>,
+export type CacheResourceBackendAdapter<ResourceConfig extends {}, UseConfig extends {}, RequestConfig> = (resource: string, config: Partial<ResourceConfig>, cache?: true) => {
+    actionHook: <T extends Resource>(config: Partial<UseConfig>, params?: Params) => CacheActionHookReturn<RequestConfig, T>,
     eventHook: <T extends Resource | Resource["id"]>(params: Params | undefined, event: "created" | "updated" | "destroyed", handler: (payload: T) => void, enabled: boolean, dependencies?: React.DependencyList) => void
 }

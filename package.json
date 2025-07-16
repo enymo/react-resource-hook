@@ -40,7 +40,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/pluralize": "^0.0.29",
-    "@types/react": "^18.0.25",
+    "@types/react": "^19.1.8",
     "postcss": "^8.4.17",
     "tsup": "^8.0.2",
     "typescript": "^4.7.4"
@@ -52,7 +52,7 @@
   "dependencies": {
     "@enymo/comparison": "^1.0.5",
     "@enymo/react-better-context": "^1.0.1",
-    "@enymo/ts-nullsafe": "^1.0.0",
+    "@enymo/ts-nullsafe": "^1.1.1",
     "pluralize": "^8.0.0",
     "ts-essentials": "^10.1.1"
   }
