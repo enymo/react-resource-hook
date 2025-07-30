@@ -50,12 +50,9 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
         const ResourceContext = createContext<{
             state: T[],
             actions: ReturnList<RequestConfig, CacheRequestConfig, T, U, V>,
-            addCreatedListener(listener: OnCreatedListener<T>): void,
-            removeCreatedListener(listener: OnCreatedListener<T>): void,
-            addUpdatedListener(listener: OnUpdatedListener<T>): void,
-            removeUpdatedListener(listener: OnUpdatedListener<T>): void,
-            addDestroyedListener(listener: OnDestroyedListener<T>): void,
-            removeDestroyedListener(listener: OnDestroyedListener<T>): void
+            addCreatedListener: (listener: OnCreatedListener<T>) => () => void,
+            addUpdatedListener: (listener: OnUpdatedListener<T>) => () => void,
+            addDestroyedListener: (listener: OnDestroyedListener<T>) => () => void,
         } | null>(null);
 
         const {actionHook: useActions, eventHook: useEvent} = adapter(resource, config as Partial<ResourceConfig>);
@@ -645,22 +642,19 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
     
             useEffect(() => {
                 if (isNotNull(onCreated) && !ignoreContext && isNotNull(resourceContext)) {
-                    resourceContext.addCreatedListener(onCreated);
-                    return () => resourceContext.removeCreatedListener(onCreated);
+                    return resourceContext.addCreatedListener(onCreated);
                 }
             }, [onCreated, ignoreContext, resourceContext]);
     
             useEffect(() => {
                 if (isNotNull(onUpdated) && !ignoreContext && isNotNull(resourceContext)) {
-                    resourceContext.addUpdatedListener(onUpdated);
-                    return () => resourceContext.removeUpdatedListener(onUpdated);
+                    return resourceContext.addUpdatedListener(onUpdated);
                 }
             }, [onUpdated, ignoreContext, resourceContext]);
     
             useEffect(() => {
                 if (isNotNull(onDestroyed) && !ignoreContext && isNotNull(resourceContext)) {
-                    resourceContext.addDestroyedListener(onDestroyed);
-                    return () => resourceContext.removeDestroyedListener(onDestroyed);
+                    return resourceContext.addDestroyedListener(onDestroyed);
                 }
             }, [onDestroyed, ignoreContext, resourceContext]);
         
@@ -695,22 +689,49 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
             const destroyedListeners = useRef(new Set<OnDestroyedListener<T>>());
     
             const handleCreated = useCallback<OnCreatedListener<T>>(item => {
+                let result = true;
                 for (const listener of createdListeners.current) {
-                    listener(item);
+                    if (!listener(item)) {
+                        result = false;
+                    };
                 }
+                return result;
             }, [createdListeners]);
     
             const handleUpdated = useCallback<OnUpdatedListener<T>>(item => {
+                let result = true;
                 for (const listener of updatedListeners.current) {
-                    listener(item);
+                    if (!listener(item)) {
+                        result = false;
+                    }
                 }
+                return result;
             }, [updatedListeners]);
     
             const handleDestroyed = useCallback<OnDestroyedListener<T>>(id => {
+                let result = true;
                 for (const listener of destroyedListeners.current) {
-                    listener(id);
+                    if (!listener(id)) {
+                        result = false;
+                    }
                 }
+                return result;
             }, [destroyedListeners]);
+
+            const addCreatedListener = useCallback((listener: OnCreatedListener<T>) => {
+                createdListeners.current.add(listener);
+                return () => createdListeners.current.delete(listener);
+            }, [createdListeners]);
+
+            const addUpdatedListener = useCallback((listener: OnUpdatedListener<T>) => {
+                updatedListeners.current.add(listener);
+                return () => updatedListeners.current.delete(listener);
+            }, [updatedListeners]);
+
+            const addDestroyedListener = useCallback((listener: OnDestroyedListener<T>) => {
+                destroyedListeners.current.add(listener);
+                return () => destroyedListeners.current.delete(listener);
+            }, [destroyedListeners])
     
             const [state, actions] = useResource({
                 params,
@@ -723,12 +744,9 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
                 <ResourceContext.Provider value={{
                     state,
                     actions,
-                    addCreatedListener: useCallback(listener => createdListeners.current.add(listener), [createdListeners]),
-                    removeCreatedListener: useCallback(listener => createdListeners.current.delete(listener), [createdListeners]),
-                    addUpdatedListener: useCallback(listener => updatedListeners.current.add(listener), [updatedListeners]),
-                    removeUpdatedListener: useCallback(listener => updatedListeners.current.delete(listener), [updatedListeners]),
-                    addDestroyedListener: useCallback(listener => destroyedListeners.current.add(listener), [destroyedListeners]),
-                    removeDestroyedListener: useCallback(listener => destroyedListeners.current.delete(listener), [destroyedListeners])
+                    addCreatedListener,
+                    addUpdatedListener,
+                    addDestroyedListener
                 }}>
                     {children}
                 </ResourceContext.Provider>

@@ -147,9 +147,9 @@ export type UpdateMethod = "on-success" | "immediate" | "local-only";
 
 export type Param = string | number | boolean | null | undefined;
 
-export type OnCreatedListener<T extends Resource> = (item: T) => void;
-export type OnUpdatedListener<T extends Resource> = (item: DeepPartial<T>) => void;
-export type OnDestroyedListener<T extends Resource> = (item: T["id"]) => void
+export type OnCreatedListener<T extends Resource> = (item: T) => boolean | void;
+export type OnUpdatedListener<T extends Resource> = (item: DeepPartial<T>) => boolean | void;
+export type OnDestroyedListener<T extends Resource> = (item: T["id"]) => boolean | void
 
 export interface OptionsCommon<T extends Resource, U> {
     /**
