@@ -13,6 +13,16 @@ export interface Options<RequestConfig, CacheRequestConfig> {
     }
 }
 
+export interface RefreshOptions<RequestConfig, CacheRequestConfig> {
+    config?: RequestConfig,
+    cache?: {
+        enabled?: boolean,
+        config?: CacheRequestConfig,
+        preferOffline?: boolean
+    },
+    signal?: AbortSignal
+}
+
 export interface Conflict<T extends Resource> {
     id: string,
     local: T | null,
@@ -55,7 +65,7 @@ export interface ReturnCommon<RequestConfig, CacheRequestConfig, T extends Resou
      * @param config A RequestConfig may be passed to be used for the request (structure is determined by adapter)
      * @returns A void promise that resolves when the refresh is complete.
      */
-    refresh: (config?: RequestConfig, signal?: AbortSignal) => Promise<void>,
+    refresh: (options?: RefreshOptions<RequestConfig, CacheRequestConfig>) => Promise<void>,
     /**
      * Send a generic query to the backend
      * @param data Any data to be sent to the backend.

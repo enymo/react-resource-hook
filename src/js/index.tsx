@@ -1,7 +1,7 @@
 import { assertNotNull, isNotNull, requireNotNull } from "@enymo/ts-nullsafe";
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { DeepPartial } from "ts-essentials";
-import { CacheResourceBackendAdapter, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Options, OptionsImplementation, OptionsList, OptionsSingle, Params, Resource, ResourceBackendAdapter, ReturnList, ReturnSingle, UpdateMethod } from "./types";
+import { CacheResourceBackendAdapter, OnCreatedListener, OnDestroyedListener, OnUpdatedListener, Options, OptionsImplementation, OptionsList, OptionsSingle, Params, RefreshOptions, Resource, ResourceBackendAdapter, ReturnList, ReturnSingle, UpdateMethod } from "./types";
 import { deepEquals, pruneUnchanged } from "./util";
 
 export type {
@@ -45,6 +45,7 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
         cache?: {
             defaultEnabled?: boolean,
             batchSync?: boolean,
+            preferOffline?: boolean
         } & Partial<CacheResourceConfig>
     } & Partial<ResourceConfig> = {}) => {
         const ResourceContext = createContext<{
@@ -407,7 +408,7 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
                 }
             }, [actions.query, setState, handleCreated, handleDestroyed]);
 
-            const refresh = useCallback(async (config?: RequestConfig, signal?: AbortSignal) => {
+            const refresh = useCallback(async (options?: RefreshOptions<RequestConfig, CacheRequestConfig>) => {
                 if (ignoreContext || !isNotNull(resourceContext)) {
                     try {
                         setError(null);
@@ -415,10 +416,17 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
                             setLoading(true);
                             try {
                                 const response = await (async () => {
+                                    const preferOffline = options?.cache?.preferOffline ?? cacheConfig.preferOffline ?? false;
+                                    if (preferOffline && cacheActions?.refresh && id === undefined) {
+                                        const response = await cacheActions.refresh(undefined, options?.cache?.config, options?.signal);
+                                        if ((response.data as T[]).length > 0) {
+                                            return response;
+                                        }
+                                    }
                                     try {
-                                        const response = await actions.refresh<V>(id, config, signal);
+                                        const response = await actions.refresh<V>(id, options?.config, options?.signal);
 
-                                        if (cacheActions?.getCache && Array.isArray(response.data)) {
+                                        if ((options?.cache?.enabled ?? cacheConfig.defaultEnabled ?? false) && cacheActions?.getCache && Array.isArray(response.data)) {
                                             const cache = await cacheActions.getCache();
                                             const map = new Map(response.data.map(item => [uniqueIdentifierCallback(item), item]));
                                             const mapIds = new Set(map.keys());
@@ -548,22 +556,22 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
                                             // Everything has been resolved. Now dispatch all write actions to both remote and local storage
                                             if (cacheConfig.batchSync) {
                                                 await Promise.all([
-                                                    remoteStore.length > 0 && actions.batchStore(remoteStore, config),
-                                                    remoteUpdate.length > 0 && actions.batchUpdate(remoteUpdate, config),
-                                                    remoteDestroy.length > 0 && actions.batchDestroy(remoteDestroy, config),
-                                                    localStore.length > 0 && cacheActions.batchStore(localStore, undefined),
-                                                    localUpdate.length > 0 && cacheActions.batchUpdate(localUpdate, undefined),
-                                                    localDestroy.length > 0 && cacheActions.batchDestroy(localDestroy, undefined)
+                                                    remoteStore.length > 0 && actions.batchStore(remoteStore, options?.config),
+                                                    remoteUpdate.length > 0 && actions.batchUpdate(remoteUpdate, options?.config),
+                                                    remoteDestroy.length > 0 && actions.batchDestroy(remoteDestroy, options?.config),
+                                                    localStore.length > 0 && cacheActions.batchStore(localStore, options?.cache?.config),
+                                                    localUpdate.length > 0 && cacheActions.batchUpdate(localUpdate, options?.cache?.config),
+                                                    localDestroy.length > 0 && cacheActions.batchDestroy(localDestroy, options?.cache?.config)
                                                 ]);
                                             }
                                             else {
                                                 await Promise.all([
-                                                    ...remoteStore.map(item => actions.store(item, config)),
-                                                    ...remoteUpdate.map(({id, ...item}) => actions.update(id, item, config)),
-                                                    ...remoteDestroy.map(id => actions.destroy(id, config)),
-                                                    ...localStore.map(item => cacheActions.store(item, undefined)),
-                                                    ...localUpdate.map(({id, ...item}) => cacheActions.update(id, item, undefined)),
-                                                    ...localDestroy.map(id => cacheActions.destroy(id, undefined))
+                                                    ...remoteStore.map(item => actions.store(item, options?.config)),
+                                                    ...remoteUpdate.map(({id, ...item}) => actions.update(id, item, options?.config)),
+                                                    ...remoteDestroy.map(id => actions.destroy(id, options?.config)),
+                                                    ...localStore.map(item => cacheActions.store(item, options?.cache?.config)),
+                                                    ...localUpdate.map(({id, ...item}) => cacheActions.update(id, item, options?.cache?.config)),
+                                                    ...localDestroy.map(id => cacheActions.destroy(id, options?.cache?.config))
                                                 ])
                                             }
 
@@ -589,7 +597,7 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
                                     }
                                     catch (e) {
                                         if (e instanceof OfflineError) {
-                                            return (await cacheActions?.refresh(id, undefined, signal)) ?? {
+                                            return (await cacheActions?.refresh(id, options?.cache?.config, options?.signal)) ?? {
                                                 data: null,
                                                 error: e.originalError,
                                                 meta: null
@@ -598,14 +606,14 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
                                         throw e;
                                     }
                                 })();
-                                if (signal?.aborted) return;
+                                if (options?.signal?.aborted) return;
 
                                 setMeta(response.meta);
                                 setState(response.data);
                                 setError(response.error);
                             }
                             catch (e) {
-                                if (!signal?.aborted) {
+                                if (!options?.signal?.aborted) {
                                     throw e;
                                 }
                             }
@@ -615,7 +623,7 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
                         }
                     }
                     finally {
-                        if (!signal?.aborted) {
+                        if (!options?.signal?.aborted) {
                             setLoading(false);
                         }
                     }
@@ -625,7 +633,9 @@ export default function createResourceFactory<ResourceConfig extends {}, CacheRe
             useEffect(() => {
                 if (autoRefresh) {
                     const abortController = new AbortController();
-                    refresh(undefined, abortController.signal);
+                    refresh({
+                        signal: abortController.signal
+                    });
                     return () => abortController.abort();
                 }
             }, [refresh, autoRefresh]);
